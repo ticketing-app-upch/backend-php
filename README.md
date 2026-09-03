@@ -1,4 +1,4 @@
-# Ticketing Backend API (PHP) 🎟️
+# Ticketing Backend API (PHP)
 > Componente transaccional del sistema de gestión de entradas y control de aforos.
 
 ![PHP](https://img.shields.io/badge/PHP-777BB4?style=for-the-badge&logo=php&logoColor=white)
