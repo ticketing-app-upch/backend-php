@@ -14,10 +14,11 @@ API REST del backend de la plataforma de ticketing. Implementa autenticación (r
 Implementado y probado (Demo 1 / Épica 1):
 
 - `POST /api/auth/register` — registro de `CLIENT` y `ORGANIZER` (el registro público de `ADMIN` está explícitamente bloqueado). Valida documento/RUC según tipo, hashea la contraseña, crea el perfil correspondiente y devuelve un JWT con el claim `role`.
+- `POST /api/auth/login` — inicio de sesión con email y contraseña. Devuelve un JWT y los datos del usuario. Rechaza usuarios inactivos.
 - Esquema de base de datos: `roles`, `users`, `client_profiles`, `organizer_profiles`.
 - Guard JWT (`api`) configurado sobre el modelo `User`.
 
-Pendiente (no implementado todavía): `POST /api/auth/login`, endpoints de eventos/compras/dashboard, tests automatizados, rate limiting y CORS explícito (ver [Pendientes conocidos](#pendientes-conocidos)).
+Pendiente (no implementado todavía): endpoints de eventos/compras/dashboard, tests automatizados, rate limiting y CORS explícito (ver [Pendientes conocidos](#pendientes-conocidos)).
 
 ## Requisitos previos
 
@@ -99,15 +100,186 @@ docker compose down
 docker compose down -v
 ```
 
+## Probar los endpoints
+
+Base URL: `http://localhost:8080/api`
+
+### POST /api/auth/register
+
+**Registro de CLIENT — caso exitoso (201):**
+
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fullName": "Juan Perez",
+    "email": "juan@email.com",
+    "password": "Secret123!",
+    "role": "CLIENT",
+    "acceptedTerms": true,
+    "marketingOptIn": false,
+    "profile": {
+      "country": "PE",
+      "city": "Lima",
+      "district": "Miraflores",
+      "hasPeruvianNationality": true,
+      "docType": "DNI",
+      "docNumber": "12345678",
+      "gender": "M",
+      "phoneCode": "+51",
+      "phone": "987654321"
+    }
+  }'
+```
+
+**Registro de ORGANIZER — caso exitoso (201):**
+
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fullName": "Maria Organiza",
+    "email": "maria@email.com",
+    "password": "Secret123!",
+    "role": "ORGANIZER",
+    "acceptedTerms": true,
+    "marketingOptIn": false,
+    "organizer": {
+      "orgType": "PERSONA",
+      "displayName": "Maria Eventos",
+      "taxId": "12345678",
+      "repName": "Maria Organiza",
+      "phone": "987654321",
+      "country": "PE"
+    }
+  }'
+```
+
+**Email duplicado (409):**
+
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fullName": "Otro Juan",
+    "email": "juan@email.com",
+    "password": "Secret123!",
+    "role": "CLIENT",
+    "acceptedTerms": true,
+    "profile": {
+      "country": "PE",
+      "city": "Lima",
+      "hasPeruvianNationality": true,
+      "docType": "DNI",
+      "docNumber": "87654321",
+      "gender": "M",
+      "phoneCode": "+51",
+      "phone": "911222333"
+    }
+  }'
+```
+
+**Validación fallida (422):**
+
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "no-es-email",
+    "password": "123",
+    "role": "INVALIDO"
+  }'
+```
+
+---
+
+### POST /api/auth/login
+
+**Login exitoso (200):**
+
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "juan@email.com",
+    "password": "Secret123!"
+  }'
+```
+
+Respuesta:
+```json
+{
+  "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "user": {
+    "id": "1",
+    "fullName": "Juan Perez",
+    "email": "juan@email.com",
+    "role": "CLIENT",
+    "marketingOptIn": false,
+    "profile": {
+      "country": "PE",
+      "city": "Lima",
+      "docType": "DNI",
+      "docNumber": "12345678"
+    }
+  }
+}
+```
+
+**Credenciales incorrectas (401):**
+
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "juan@email.com",
+    "password": "WrongPassword"
+  }'
+```
+
+**Email inexistente (401):**
+
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "noexiste@email.com",
+    "password": "Secret123!"
+  }'
+```
+
+**Validación fallida (422):**
+
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "formato-invalido",
+    "password": ""
+  }'
+```
+
+---
+
+### Resumen de códigos HTTP
+
+| Endpoint | Código | Significado |
+|---|---|---|
+| `POST /api/auth/register` | `201` | Registro exitoso, devuelve token + usuario |
+| `POST /api/auth/register` | `409` | Email, documento o RUC ya registrado |
+| `POST /api/auth/register` | `422` | Error de validación (formato, campos requeridos) |
+| `POST /api/auth/login` | `200` | Login exitoso, devuelve token + usuario |
+| `POST /api/auth/login` | `401` | Credenciales incorrectas o usuario inactivo |
+| `POST /api/auth/login` | `422` | Error de validación (email inválido, campos requeridos) |
+
 ## Pendientes conocidos
 
 Detectados en la revisión técnica previa al commit — no bloquean el uso actual, pero conviene abordarlos pronto:
 
-1. Habilitar `RefreshDatabase` en los tests y escribir un `RegisterTest` (Feature) que cubra los casos ya validados manualmente (201, 409 ×3, 422 ×2).
+1. Habilitar `RefreshDatabase` en los tests y escribir tests para `register` y `login` (Feature) que cubran los casos ya validados manualmente.
 2. Activar rate limiting en las rutas de la API (`$middleware->throttleApi()` en `bootstrap/app.php`).
 3. Configurar `config/cors.php` explícitamente (orígenes concretos, no el default `*`).
 4. Actualizar o eliminar `docs/database/schema.sql` (desactualizado, no refleja el esquema real).
-5. `POST /api/auth/login` todavía no está implementado.
 
 ## Referencia del contrato
 

@@ -7,3 +7,4 @@ use Illuminate\Support\Facades\Route;
 // sin CSRF).
 
 Route::post('/auth/register', [AuthController::class, 'register']);
+Route::post('/auth/login', [AuthController::class, 'login']);

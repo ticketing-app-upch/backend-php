@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Resources\UserResource;
 use App\Models\ClientProfile;
@@ -99,6 +100,33 @@ class AuthController extends Controller
             'token' => $token,
             'user' => new UserResource($user),
         ], 201);
+    }
+
+    public function login(LoginRequest $request): JsonResponse
+    {
+        $credentials = $request->only('email', 'password');
+        $credentials['email'] = trim(strtolower($credentials['email']));
+
+        $token = auth('api')->attempt($credentials);
+
+        if (! $token) {
+            return response()->json(['message' => 'Credenciales inválidas.'], 401);
+        }
+
+        $user = auth('api')->user();
+
+        if (! $user->active) {
+            auth('api')->logout();
+
+            return response()->json(['message' => 'Credenciales inválidas.'], 401);
+        }
+
+        $user->load(['role', 'clientProfile', 'organizerProfile']);
+
+        return response()->json([
+            'token' => $token,
+            'user' => new UserResource($user),
+        ]);
     }
 
     private function isDuplicateEntry(QueryException $e): bool
