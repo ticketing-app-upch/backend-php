@@ -17,6 +17,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => EnsureUserHasRole::class,
         ]);
+
+        // Esta API no tiene ruta web "login": el framework registra por
+        // defecto un redirect a route('login') para invitados no
+        // autenticados, lo cual revienta con RouteNotFoundException en
+        // requests que no envían "Accept: application/json". Al no
+        // redirigir nunca, el 401 JSON de shouldRenderJsonWhen() aplica
+        // siempre para /api/*, sin importar el header Accept.
+        $middleware->redirectGuestsTo(fn () => null);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

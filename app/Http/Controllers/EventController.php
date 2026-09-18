@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Event\IndexEventRequest;
 use App\Http\Requests\Event\StoreEventRequest;
 use App\Http\Resources\EventResource;
 use App\Models\Event;
@@ -11,6 +12,34 @@ use Illuminate\Support\Facades\DB;
 
 class EventController extends Controller
 {
+    public function index(IndexEventRequest $request): JsonResponse
+    {
+        $filters = $request->validated();
+
+        $events = Event::query()
+            ->with('zones')
+            ->where('status', 'PUBLISHED')
+            ->where('starts_at', '>', now())
+            ->when($filters['category'] ?? null, function ($query, $category) {
+                $query->whereRaw('LOWER(category) = ?', [mb_strtolower($category)]);
+            })
+            ->when($filters['venue'] ?? null, function ($query, $venue) {
+                $needle = '%'.mb_strtolower($venue).'%';
+
+                $query->where(function ($query) use ($needle) {
+                    $query->whereRaw('LOWER(venue_name) LIKE ?', [$needle])
+                        ->orWhereRaw('LOWER(venue_address) LIKE ?', [$needle]);
+                });
+            })
+            ->when($filters['date'] ?? null, function ($query, $date) {
+                $query->whereDate('starts_at', $date);
+            })
+            ->orderBy('starts_at')
+            ->get();
+
+        return response()->json(EventResource::collection($events));
+    }
+
     public function store(StoreEventRequest $request): JsonResponse
     {
         $data = $request->validated();
