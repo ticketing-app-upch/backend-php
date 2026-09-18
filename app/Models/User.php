@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -47,6 +48,11 @@ class User extends Authenticatable implements JWTSubject
     public function organizerProfile(): HasOne
     {
         return $this->hasOne(OrganizerProfile::class);
+    }
+
+    public function events(): HasMany
+    {
+        return $this->hasMany(Event::class, 'organizer_id');
     }
 
     public function getJWTIdentifier()
