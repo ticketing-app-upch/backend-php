@@ -11,7 +11,12 @@ Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
 
 Route::get('/events', [EventController::class, 'index']);
+Route::get('/events/{id}', [EventController::class, 'show']);
 
 Route::middleware(['auth:api', 'role:ORGANIZER'])->group(function () {
     Route::post('/events', [EventController::class, 'store']);
+});
+
+Route::middleware(['auth:api', 'role:CLIENT'])->group(function () {
+    Route::post('/events/{id}/tickets', [EventController::class, 'purchaseTickets']);
 });
