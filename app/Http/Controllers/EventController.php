@@ -6,11 +6,13 @@ use App\Http\Requests\Event\IndexEventRequest;
 use App\Http\Requests\Event\PurchaseTicketRequest;
 use App\Http\Requests\Event\StoreEventRequest;
 use App\Http\Resources\EventResource;
+use App\Http\Resources\SalesReportResource;
 use App\Http\Resources\TicketResource;
 use App\Models\Event;
 use App\Models\Ticket;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -129,5 +131,27 @@ class EventController extends Controller
         $ticket->load('eventZone.event');
 
         return response()->json(new TicketResource($ticket), 201);
+    }
+
+    public function salesReport(string $id, Request $request): JsonResponse
+    {
+        $event = Event::find($id);
+
+        if (! $event) {
+            return response()->json(['message' => 'Evento no encontrado.'], 404);
+        }
+
+        if ($event->organizer_id !== $request->user('api')->id) {
+            return response()->json(['message' => 'No tienes permiso para consultar este reporte.'], 403);
+        }
+
+        $event->load([
+            'zones' => fn ($query) => $query
+                ->withSum('tickets as tickets_sold', 'quantity')
+                ->withSum('tickets as revenue', 'total_price')
+                ->orderBy('id'),
+        ]);
+
+        return response()->json(new SalesReportResource($event));
     }
 }

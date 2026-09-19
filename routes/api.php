@@ -15,6 +15,7 @@ Route::get('/events/{id}', [EventController::class, 'show']);
 
 Route::middleware(['auth:api', 'role:ORGANIZER'])->group(function () {
     Route::post('/events', [EventController::class, 'store']);
+    Route::get('/events/{id}/sales-report', [EventController::class, 'salesReport']);
 });
 
 Route::middleware(['auth:api', 'role:CLIENT'])->group(function () {
