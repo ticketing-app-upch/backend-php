@@ -25,9 +25,7 @@ class AuthController extends Controller
         }
 
         if ($data['role'] === 'CLIENT') {
-            $duplicateDoc = ClientProfile::where('doc_type', $data['profile']['docType'])
-                ->where('doc_number', $data['profile']['docNumber'])
-                ->exists();
+            $duplicateDoc = ClientProfile::where('doc_number', $data['profile']['docNumber'])->exists();
 
             if ($duplicateDoc) {
                 return response()->json(['message' => 'Ese documento ya está registrado.'], 409);
@@ -38,7 +36,7 @@ class AuthController extends Controller
             $duplicateTax = OrganizerProfile::where('tax_id', $data['organizer']['taxId'])->exists();
 
             if ($duplicateTax) {
-                return response()->json(['message' => 'Ese RUC/DNI ya está registrado.'], 409);
+                return response()->json(['message' => 'Ese RUC ya está registrado.'], 409);
             }
         }
 
@@ -51,34 +49,16 @@ class AuthController extends Controller
                     'email' => $email,
                     'password' => $data['password'],
                     'role_id' => $role->id,
-                    'marketing_opt_in' => $data['marketingOptIn'] ?? false,
                     'active' => true,
-                    'accepted_terms_at' => now(),
                 ]);
 
                 if ($role->name === 'CLIENT') {
                     $user->clientProfile()->create([
-                        'country' => $data['profile']['country'],
-                        'city' => $data['profile']['city'],
-                        'district' => $data['profile']['district'] ?? null,
-                        'has_peruvian_nationality' => $data['profile']['hasPeruvianNationality'],
-                        'doc_type' => $data['profile']['docType'],
                         'doc_number' => $data['profile']['docNumber'],
-                        'gender' => $data['profile']['gender'],
-                        'phone_code' => $data['profile']['phoneCode'],
-                        'phone' => $data['profile']['phone'],
                     ]);
                 } else {
                     $user->organizerProfile()->create([
-                        'org_type' => $data['organizer']['orgType'],
-                        'display_name' => $data['organizer']['displayName'],
                         'tax_id' => $data['organizer']['taxId'],
-                        'legal_name' => $data['organizer']['legalName'] ?? null,
-                        'rep_name' => $data['organizer']['repName'],
-                        'phone' => $data['organizer']['phone'],
-                        'country' => $data['organizer']['country'],
-                        'city' => $data['organizer']['city'] ?? null,
-                        'website' => $data['organizer']['website'] ?? null,
                     ]);
                 }
 

@@ -14,16 +14,7 @@ return new class extends Migration
         Schema::create('organizer_profiles', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->unique()->constrained('users')->cascadeOnDelete();
-            $table->string('org_type');
-            $table->string('display_name');
             $table->string('tax_id')->unique();
-            $table->string('legal_name')->nullable();
-            $table->string('rep_name');
-            $table->string('phone');
-            $table->string('country', 2);
-            $table->string('city')->nullable();
-            $table->string('website')->nullable();
-            $table->string('verification_status')->default('PENDING');
             $table->timestamps();
         });
     }

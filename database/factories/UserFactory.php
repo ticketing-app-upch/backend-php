@@ -23,9 +23,7 @@ class UserFactory extends Factory
             'email' => fake()->unique()->safeEmail(),
             'password' => 'password',
             'role_id' => Role::where('name', 'CLIENT')->value('id'),
-            'marketing_opt_in' => fake()->boolean(),
             'active' => true,
-            'accepted_terms_at' => now(),
         ];
     }
 }

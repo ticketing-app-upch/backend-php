@@ -17,9 +17,7 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->string('password');
             $table->foreignId('role_id')->constrained('roles')->restrictOnDelete();
-            $table->boolean('marketing_opt_in')->default(false);
             $table->boolean('active')->default(true);
-            $table->timestamp('accepted_terms_at');
             $table->timestamps();
         });
     }

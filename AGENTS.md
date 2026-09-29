@@ -4,9 +4,9 @@ Guía operativa para agentes de IA que trabajen en este repositorio. Basada en e
 
 ## Propósito y arquitectura actual
 
-API REST de la plataforma de ticketing AlpaTeck. Implementa autenticación (registro) para los roles `CLIENT`, `ORGANIZER` y `ADMIN`, consumida por el frontend Angular — `frontend-angular/FRONTEND_HANDOFF.md` es el contrato autoritativo de payloads, códigos HTTP y reglas de validación.
+API REST de la plataforma de ticketing AlpaTeck. Implementa autenticación para los roles `CLIENT`, `ORGANIZER` y `ADMIN`, eventos, compra de entradas y reportes de ventas. El contrato actual de registro está documentado en `README.md`.
 
-Patrón por endpoint, ya establecido y a seguir: `Route` → `FormRequest` (validación de formato) → `Controller` (orquestación: duplicados, transacción, respuesta) → `Resource` (forma de salida). No existe una capa de "servicios" ni "actions" separada — la lógica de negocio vive directamente en el controlador porque el proyecto todavía tiene un único endpoint real.
+Patrón por endpoint, ya establecido y a seguir: `Route` → `FormRequest` (validación de formato) → `Controller` (orquestación: duplicados, transacción, respuesta) → `Resource` (forma de salida). No existe una capa de "servicios" ni "actions" separada; la lógica de negocio vive directamente en los controladores.
 
 ## Stack y versiones verificadas
 
@@ -24,18 +24,18 @@ app/Http/Requests/Auth/RegisterRequest.php
 app/Http/Resources/UserResource.php
 app/Models/{User,Role,ClientProfile,OrganizerProfile}.php
 database/migrations/0001_01_01_0000{00..05}_*.php
-database/seeders/{DatabaseSeeder,RoleSeeder}.php
+database/seeders/{DatabaseSeeder,RoleSeeder,AdminUserSeeder}.php
 database/factories/UserFactory.php
 routes/api.php            (único archivo de rutas de API; registrado en bootstrap/app.php)
 config/jwt.php             (publicado y versionado; solo referencias env(), sin secretos)
 ```
 
-Único endpoint implementado hoy: `POST /api/auth/register`.
+Los endpoints implementados figuran en `routes/api.php` y en `README.md`.
 
 ## Convenciones existentes
 
 - **Form Requests** en `app/Http/Requests/<Dominio>/` (ej. `Auth/RegisterRequest.php`). Contienen solo reglas de formato y condicionales — nunca chequeos de duplicados contra la base de datos.
-- **Resources** en `app/Http/Resources/`. Mapean explícitamente snake_case (columnas) → camelCase (contrato API) y nunca exponen columnas internas (`password`, `role_id`, `accepted_terms_at`, `active`, timestamps).
+- **Resources** en `app/Http/Resources/`. Mapean explícitamente snake_case (columnas) → camelCase (contrato API) y nunca exponen columnas internas (`password`, `role_id`, `active`, timestamps).
 - **Modelos** usan atributos PHP (`#[Fillable([...])]`, `#[Hidden([...])]`) en vez de propiedades `protected $fillable`/`$hidden` — es el estilo ya establecido en los 4 modelos existentes; mantenerlo en modelos nuevos.
 - **Resolución de roles**: siempre por nombre (`Role::where('name', ...)`), nunca IDs hardcodeados.
 - **Mass assignment**: el controlador arma los arrays de `create()` explícitamente; nunca `Model::create($request->all())`.
@@ -81,13 +81,13 @@ Backend en `localhost:8080` (interno: 8000); MySQL en `localhost:3307` (interno:
 
 - MySQL 8, InnoDB, `utf8mb4`/`utf8mb4_unicode_ci`.
 - `roles` → `users` (FK `role_id`, `restrictOnDelete`) → `client_profiles`/`organizer_profiles` (FK `user_id`, `cascadeOnDelete`, único = relación 1:1).
-- Enums de negocio (`doc_type`, `gender`, `org_type`, `verification_status`, `role`) son columnas `string` validadas en la capa de aplicación — deliberadamente no `ENUM` nativo de MySQL. Mantener el criterio para columnas nuevas equivalentes.
-- Índices únicos existentes: `users.email`, `client_profiles.(doc_type, doc_number)`, `organizer_profiles.tax_id`. Un campo nuevo con semántica de "documento único" debería seguir el mismo patrón: verificación explícita en el controlador + índice de BD como respaldo, no solo uno de los dos.
+- El rol se identifica mediante la tabla `roles`; el registro público admite `CLIENT` y `ORGANIZER`.
+- Índices únicos existentes: `users.email`, `client_profiles.doc_number`, `organizer_profiles.tax_id`. Un campo nuevo con semántica de "documento único" debería seguir el mismo patrón: verificación explícita en el controlador + índice de BD como respaldo, no solo uno de los dos.
 
 ## Testing y deuda técnica conocida
 
-- `tests/Feature/ExampleTest.php` tiene `RefreshDatabase` **comentado** — hoy no hay ninguna migración automática de la base de datos de test. Un test nuevo que toque BD lo va a necesitar habilitado primero.
-- No existe ningún test para `AuthController::register()` todavía, pese a ser el único endpoint implementado.
+- Los tests que usan la base de datos emplean `RefreshDatabase` y SQLite en memoria mediante `phpunit.xml`; no modifican MySQL.
+- `tests/Feature/RegisterTest.php` cubre el registro de ambos roles y el login posterior; `RegistrationMigrationTest.php` verifica el esquema creado por las migraciones originales.
 - `docs/database/schema.sql` está desactualizado (esquema de una versión anterior del diseño) — no es fuente de verdad.
 - Sin rate limiting ni `config/cors.php` explícito (ver arriba).
 

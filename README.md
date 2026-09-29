@@ -1,286 +1,151 @@
 # AlpaTeck — Backend (Laravel)
 
-API REST del backend de la plataforma de ticketing. Implementa autenticación (registro/login) para los roles `CLIENT`, `ORGANIZER` y `ADMIN`, consumida por el frontend Angular según el contrato en `frontend-angular/FRONTEND_HANDOFF.md`.
+API REST de la plataforma de ticketing. Usa PHP 8.4, Laravel 13, MySQL 8 y autenticación JWT (`php-open-source-saver/jwt-auth`). El entorno de desarrollo se ejecuta con Docker Compose. **La API usa MySQL** mediante la conexión `mysql` configurada en `compose.yaml` y `.env.example`.
 
-## Stack
+## Funciones disponibles
 
-- PHP 8.4 + Laravel 13
-- MySQL 8 (Eloquent ORM)
-- Autenticación JWT (`php-open-source-saver/jwt-auth`)
-- Docker / Docker Compose
+| Método y ruta | Acceso | Función |
+|---|---|---|
+| `POST /api/auth/register` | Público | Registra un cliente con DNI o un organizador con RUC |
+| `POST /api/auth/login` | Público | Inicia sesión con correo y contraseña |
+| `GET /api/events` | Público | Lista eventos publicados y futuros |
+| `GET /api/events/{id}` | Público | Consulta un evento |
+| `POST /api/events` | `ORGANIZER` | Crea un evento con zonas |
+| `POST /api/events/{id}/tickets` | `CLIENT` | Compra entradas |
+| `GET /api/events/{id}/sales-report` | Organizador propietario | Consulta ventas del evento |
 
-## Estado actual
+El registro público de `ADMIN` está bloqueado. El guard `api` usa JWT; la contraseña se almacena con hash y el token incluye el rol.
 
-Implementado y probado (Demo 1 / Épica 1):
+## Instalación
 
-- `POST /api/auth/register` — registro de `CLIENT` y `ORGANIZER` (el registro público de `ADMIN` está explícitamente bloqueado). Valida documento/RUC según tipo, hashea la contraseña, crea el perfil correspondiente y devuelve un JWT con el claim `role`.
-- `POST /api/auth/login` — inicio de sesión con email y contraseña. Devuelve un JWT y los datos del usuario. Rechaza usuarios inactivos.
-- Esquema de base de datos: `roles`, `users`, `client_profiles`, `organizer_profiles`.
-- Guard JWT (`api`) configurado sobre el modelo `User`.
-
-Pendiente (no implementado todavía): endpoints de eventos/compras/dashboard, tests automatizados, rate limiting y CORS explícito (ver [Pendientes conocidos](#pendientes-conocidos)).
-
-## Requisitos previos
-
-- Docker y Docker Compose instalados. No hace falta PHP, Composer ni MySQL en tu máquina — todo corre dentro de los contenedores.
-
-## Cómo levantar el backend (primera vez)
+Docker y Docker Compose deben estar instalados. Desde `backend-php`:
 
 ```bash
-git clone <url-del-repo>
-cd backend-php
 cp .env.example .env
 docker compose up -d --build
-```
-
-El `Dockerfile` detecta automáticamente si falta `vendor/` (por ejemplo, en un clon nuevo) y ejecuta `composer install` antes de arrancar el servidor — no hace falta ningún paso manual de Composer.
-
-Con los contenedores arriba, corré estos tres comandos **una sola vez**:
-
-```bash
 docker compose exec app php artisan key:generate
 docker compose exec app php artisan jwt:secret
 docker compose exec app php artisan migrate --seed
 ```
 
-- `key:generate` — `.env.example` trae `APP_KEY` vacío a propósito; cada quien genera el suyo, no se comparte.
-- `jwt:secret` — mismo caso con `JWT_SECRET`; es la clave que firma los JWT, nunca se versiona.
-- `migrate --seed` — **importante que sea con `--seed`**, no solo `migrate`: la tabla `roles` necesita estar sembrada (`ADMIN`/`ORGANIZER`/`CLIENT`) antes de poder registrar cualquier usuario, porque `role_id` es una foreign key obligatoria.
+`APP_KEY` y `JWT_SECRET` se generan localmente; no deben compartirse ni versionarse. `migrate --seed` crea los roles `ADMIN`, `ORGANIZER` y `CLIENT`, necesarios para el registro. Para crear también la cuenta administradora inicial, completa `INITIAL_ADMIN_NAME`, `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` en `.env` **antes de levantar los contenedores**. La contraseña debe tener al menos ocho caracteres, una mayúscula, un número y un carácter especial. Si los tres valores están vacíos, se omite la cuenta administradora; si falta solo alguno, el seeder falla. Si los completas con los contenedores ya levantados, ejecuta `docker compose up -d --force-recreate app` y luego `docker compose exec app php artisan db:seed`, para que Docker cargue las nuevas variables. Repetir el seeder no duplica el usuario ni cambia su contraseña; un correo ya asignado a otro rol produce un error. En arranques posteriores basta con `docker compose up -d`.
 
-Verificar que quedó arriba:
+La API queda en `http://localhost:8080/api`. MySQL se publica en el puerto `3307` del host. Para comprobar que Laravel está activo:
 
 ```bash
 curl http://localhost:8080/up
 ```
 
-Debería responder `200`. A partir de ahí, `http://localhost:8080/api/auth/register` queda disponible.
+El cliente HTTP debe usar `http://localhost:8080/api` como URL base. El backend usa la configuración CORS predeterminada de Laravel.
 
-## Arranques posteriores
+## Registro
 
-Una vez hecho el setup inicial, para las siguientes veces alcanza con:
+`POST /api/auth/register` requiere `fullName`, `email`, `password`, `role` y el documento del perfil correspondiente. `role` solo admite `CLIENT` u `ORGANIZER`.
 
-```bash
-docker compose up -d
-```
+### Comparación de campos: antes y ahora
 
-(`key:generate`, `jwt:secret` y `migrate --seed` no hace falta repetirlos — sus resultados ya quedaron en tu `.env` y en la base de datos.)
-
-## Puertos
-
-| Servicio | Puerto interno | Puerto en tu máquina |
+| Parte del registro | Antes | Ahora |
 |---|---|---|
-| Laravel (`app`) | 8000 | **8080** |
-| MySQL (`db`) | 3306 | 3307 |
+| Ambos roles | `fullName`, `email`, `password`, `role`, `acceptedTerms` obligatorio y `marketingOptIn` opcional | `fullName`, `email`, `password` y `role`. Ya no se solicitan ni guardan `acceptedTerms` ni `marketingOptIn` |
+| Usuario (`CLIENT`) | `profile.country`, `city`, `district`, `hasPeruvianNationality`, `docType`, `docNumber`, `gender`, `phoneCode` y `phone`; se admitían DNI, CE y pasaporte | Solo `profile.docNumber`: DNI de 8 dígitos |
+| Organizador (`ORGANIZER`) | `organizer.orgType`, `displayName`, `taxId`, `legalName`, `repName`, `phone`, `country`, `city` y `website`; según el tipo se admitía RUC o DNI | Solo `organizer.taxId`: RUC de 11 dígitos |
 
-El backend escucha internamente en 8000; Docker lo expone en 8080 para coincidir con `apiBackendUrl` del frontend Angular (`src/enviroments/enviroment.ts`).
+Para quien se registra, los datos son **nombre, correo, contraseña y DNI** si es usuario, o **nombre, correo, contraseña y RUC** si es organizador. El cliente HTTP envía además `role` para que el backend sepa qué perfil crear. Los perfiles conservan solo su documento, `user_id`, clave primaria y marcas de tiempo; `users` conserva también `role_id` y `active` para la autenticación.
 
-## Conectar el frontend
+Cliente (`CLIENT`):
 
-En `frontend-angular/src/enviroments/enviroment.ts`, con `useMock: false` y `apiBackendUrl: 'http://localhost:8080/api'` ya apunta a este backend. Nota: CORS todavía no está configurado explícitamente (ver pendientes) — hoy funciona por el default permisivo de Laravel, pero es una de las primeras cosas a resolver si algo falla ahí.
-
-## Comandos útiles
-
-```bash
-# Ver logs del backend
-docker compose logs app -f
-
-# Entrar a una consola del contenedor
-docker compose exec app bash
-
-# Correr Artisan dentro del contenedor
-docker compose exec app php artisan <comando>
-
-# Ver las rutas registradas
-docker compose exec app php artisan route:list
-
-# Parar todo (sin borrar datos de MySQL)
-docker compose down
-
-# Parar y borrar también los datos de MySQL
-docker compose down -v
-```
-
-## Probar los endpoints
-
-Base URL: `http://localhost:8080/api`
-
-### POST /api/auth/register
-
-**Registro de CLIENT — caso exitoso (201):**
-
-```bash
-curl -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "fullName": "Juan Perez",
-    "email": "juan@email.com",
-    "password": "Secret123!",
-    "role": "CLIENT",
-    "acceptedTerms": true,
-    "marketingOptIn": false,
-    "profile": {
-      "country": "PE",
-      "city": "Lima",
-      "district": "Miraflores",
-      "hasPeruvianNationality": true,
-      "docType": "DNI",
-      "docNumber": "12345678",
-      "gender": "M",
-      "phoneCode": "+51",
-      "phone": "987654321"
-    }
-  }'
-```
-
-**Registro de ORGANIZER — caso exitoso (201):**
-
-```bash
-curl -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "fullName": "Maria Organiza",
-    "email": "maria@email.com",
-    "password": "Secret123!",
-    "role": "ORGANIZER",
-    "acceptedTerms": true,
-    "marketingOptIn": false,
-    "organizer": {
-      "orgType": "PERSONA",
-      "displayName": "Maria Eventos",
-      "taxId": "12345678",
-      "repName": "Maria Organiza",
-      "phone": "987654321",
-      "country": "PE"
-    }
-  }'
-```
-
-**Email duplicado (409):**
-
-```bash
-curl -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "fullName": "Otro Juan",
-    "email": "juan@email.com",
-    "password": "Secret123!",
-    "role": "CLIENT",
-    "acceptedTerms": true,
-    "profile": {
-      "country": "PE",
-      "city": "Lima",
-      "hasPeruvianNationality": true,
-      "docType": "DNI",
-      "docNumber": "87654321",
-      "gender": "M",
-      "phoneCode": "+51",
-      "phone": "911222333"
-    }
-  }'
-```
-
-**Validación fallida (422):**
-
-```bash
-curl -X POST http://localhost:8080/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "no-es-email",
-    "password": "123",
-    "role": "INVALIDO"
-  }'
-```
-
----
-
-### POST /api/auth/login
-
-**Login exitoso (200):**
-
-```bash
-curl -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "juan@email.com",
-    "password": "Secret123!"
-  }'
-```
-
-Respuesta:
 ```json
 {
-  "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "fullName": "Juan Perez",
+  "email": "juan@example.com",
+  "password": "Secret123!",
+  "role": "CLIENT",
+  "profile": { "docNumber": "01234567" }
+}
+```
+
+Organizador (`ORGANIZER`):
+
+```json
+{
+  "fullName": "Maria Organiza",
+  "email": "maria@example.com",
+  "password": "Secret123!",
+  "role": "ORGANIZER",
+  "organizer": { "taxId": "20123456789" }
+}
+```
+
+El DNI debe ser una **cadena de 8 dígitos** y el RUC una **cadena de 11 dígitos** que comience por `10`, `15`, `17` o `20`. Enviarlos como cadenas conserva los ceros iniciales. El backend comprueba el formato del RUC, pero no consulta SUNAT. La contraseña requiere al menos 8 caracteres, una mayúscula, un número y un carácter especial.
+
+`profile.docType` todavía se acepta por compatibilidad si vale `DNI`, pero no se almacena ni se devuelve. Otros campos del registro anterior se ignoran. No se aceptan CE, pasaporte ni DNI como documento de organizador.
+
+El usuario y su perfil se crean en una transacción. La respuesta `201` contiene un JWT y los datos del usuario, por ejemplo:
+
+```json
+{
+  "token": "eyJ...",
   "user": {
     "id": "1",
     "fullName": "Juan Perez",
-    "email": "juan@email.com",
+    "email": "juan@example.com",
     "role": "CLIENT",
-    "marketingOptIn": false,
-    "profile": {
-      "country": "PE",
-      "city": "Lima",
-      "docType": "DNI",
-      "docNumber": "12345678"
-    }
+    "profile": { "docNumber": "01234567" }
   }
 }
 ```
 
-**Credenciales incorrectas (401):**
+El perfil del organizador aparece en `user.organizer.taxId`. La respuesta no incluye contraseña ni columnas internas. Los conflictos por correo, DNI o RUC duplicados devuelven `409`; los datos requeridos o formatos inválidos devuelven `422`. Los tres valores tienen índices únicos en MySQL.
 
-```bash
-curl -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "juan@email.com",
-    "password": "WrongPassword"
-  }'
+## Inicio de sesión
+
+`POST /api/auth/login` recibe correo y contraseña:
+
+```json
+{
+  "email": "juan@example.com",
+  "password": "Secret123!"
+}
 ```
 
-**Email inexistente (401):**
+Devuelve `200` con `token` y `user` en la misma forma que el registro. Las credenciales incorrectas o un usuario inactivo devuelven `401`; una solicitud inválida devuelve `422`.
+
+## Esquema y migraciones
+
+Las migraciones de creación (`0001_01_01_000003` a `000005`) crean directamente las tablas de registro con la estructura actual:
+
+| Tabla | Columnas de negocio |
+|---|---|
+| `users` | `full_name`, `email`, `password`, `role_id`, `active` |
+| `client_profiles` | `user_id`, `doc_number` (DNI) |
+| `organizer_profiles` | `user_id`, `tax_id` (RUC) |
+
+Las tablas también incluyen sus claves primarias y marcas de tiempo. `role_id` y `user_id` son claves foráneas; `users.email`, `client_profiles.doc_number` y `organizer_profiles.tax_id` tienen índices únicos. Una instalación nueva solo necesita `php artisan migrate --seed`: no hay migraciones posteriores que creen y luego eliminen columnas del registro.
+
+**Base existente con el esquema anterior:** Laravel no repite una migración ya ejecutada aunque cambie su archivo. Para reconstruir esas tablas desde las migraciones actuales se necesita `php artisan migrate:fresh --seed`, que **borra todas las tablas y sus datos**; hazlo solo si puedes regenerarlos. La base usada durante este desarrollo ya tiene el esquema final, por lo que no necesita reconstruirse.
+
+## Pruebas
+
+Solo al ejecutar `php artisan test`, `phpunit.xml` sustituye la conexión de MySQL por una base SQLite temporal en memoria. Así las pruebas pueden crear y borrar registros sin modificar la base MySQL de la aplicación. Al terminar las pruebas, la API sigue conectada a MySQL. `tests/TestCase.php` genera claves efímeras para `APP_KEY` y `JWT_SECRET` durante las pruebas, sin depender de secretos reales en `.env`:
 
 ```bash
-curl -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "noexiste@email.com",
-    "password": "Secret123!"
-  }'
+docker compose exec app php artisan test --filter="RegisterTest|RegistrationMigrationTest"
+docker compose exec app php artisan test
 ```
 
-**Validación fallida (422):**
+## Comandos útiles
 
 ```bash
-curl -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "formato-invalido",
-    "password": ""
-  }'
+docker compose logs app -f
+docker compose exec app php artisan route:list
+docker compose exec app php artisan migrate:status
+docker compose down
 ```
 
----
-
-### Resumen de códigos HTTP
-
-| Endpoint | Código | Significado |
-|---|---|---|
-| `POST /api/auth/register` | `201` | Registro exitoso, devuelve token + usuario |
-| `POST /api/auth/register` | `409` | Email, documento o RUC ya registrado |
-| `POST /api/auth/register` | `422` | Error de validación (formato, campos requeridos) |
-| `POST /api/auth/login` | `200` | Login exitoso, devuelve token + usuario |
-| `POST /api/auth/login` | `401` | Credenciales incorrectas o usuario inactivo |
-| `POST /api/auth/login` | `422` | Error de validación (email inválido, campos requeridos) |
+`docker compose down` detiene los contenedores sin borrar el volumen de MySQL.
 
 ## Pendientes conocidos
 
-Detectados en la revisión técnica previa al commit — no bloquean el uso actual, pero conviene abordarlos pronto:
-
-1. Habilitar `RefreshDatabase` en los tests y escribir tests para `register` y `login` (Feature) que cubran los casos ya validados manualmente.
-2. Activar rate limiting en las rutas de la API (`$middleware->throttleApi()` en `bootstrap/app.php`).
-3. Configurar `config/cors.php` explícitamente (orígenes concretos, no el default `*`).
-4. Actualizar o eliminar `docs/database/schema.sql` (desactualizado, no refleja el esquema real).
-
-## Referencia del contrato
-
-El contrato completo que este backend debe cumplir (payloads, códigos HTTP, reglas de validación) está en `frontend-angular/FRONTEND_HANDOFF.md`.
+- Ampliar las pruebas específicas de login. Las pruebas de registro cubren el login posterior para ambos roles.
+- Configurar rate limiting y CORS con orígenes explícitos antes de un despliegue público.
+- Actualizar `docs/database/schema.sql`, que aún describe un esquema anterior.
