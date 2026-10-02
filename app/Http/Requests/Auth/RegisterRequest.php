@@ -21,6 +21,7 @@ class RegisterRequest extends FormRequest
             'email' => ['required', 'email', 'max:255'],
             'password' => ['required', 'string', 'regex:/^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/'],
             'role' => ['required', 'string', 'in:CLIENT,ORGANIZER'],
+            'acceptedTerms' => ['required', 'accepted'],
 
             'profile' => ['exclude_unless:role,CLIENT', 'required', 'array'],
             'profile.docType' => ['exclude_unless:role,CLIENT', 'sometimes', 'in:DNI'],

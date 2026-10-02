@@ -30,6 +30,7 @@ class RegisterTest extends TestCase
             'email' => 'juan@example.com',
             'password' => 'Secret123!',
             'role' => $role,
+            'acceptedTerms' => true,
             ...($role === 'CLIENT'
                 ? ['profile' => ['docNumber' => '01234567']]
                 : ['organizer' => ['taxId' => '20123456789']]),
@@ -52,6 +53,7 @@ class RegisterTest extends TestCase
         $this->assertNotEmpty($response->json('token'));
         $user = User::sole();
         $this->assertTrue(Hash::check($payload['password'], $user->password));
+        $this->assertNotNull($user->terms_accepted_at);
         $this->assertSame($user->id, ClientProfile::sole()->user_id);
         $this->assertDatabaseCount('organizer_profiles', 0);
 
@@ -89,6 +91,10 @@ class RegisterTest extends TestCase
             'invalid email' => ['CLIENT', 'email', 'invalid'],
             'weak password' => ['CLIENT', 'password', '12345678'],
             'public admin' => ['CLIENT', 'role', 'ADMIN'],
+            'missing terms' => ['CLIENT', 'acceptedTerms', null],
+            'rejected terms' => ['CLIENT', 'acceptedTerms', false],
+            'rejected terms as string' => ['CLIENT', 'acceptedTerms', 'false'],
+            'organizer rejected terms' => ['ORGANIZER', 'acceptedTerms', false],
             'missing DNI' => ['CLIENT', 'profile.docNumber', null],
             'short DNI' => ['CLIENT', 'profile.docNumber', '1234567'],
             'long DNI' => ['CLIENT', 'profile.docNumber', '123456789'],
@@ -171,7 +177,6 @@ class RegisterTest extends TestCase
     public function test_removed_fields_are_ignored_and_not_returned(): void
     {
         $payload = $this->payload();
-        $payload['acceptedTerms'] = true;
         $payload['marketingOptIn'] = true;
         $payload['profile'] += [
             'country' => 'PE', 'city' => 'Lima', 'district' => 'Miraflores',
@@ -192,7 +197,7 @@ class RegisterTest extends TestCase
             array_keys(ClientProfile::sole()->getAttributes()),
         );
         $this->assertEqualsCanonicalizing(
-            ['id', 'full_name', 'email', 'password', 'role_id', 'active', 'created_at', 'updated_at'],
+            ['id', 'full_name', 'email', 'password', 'role_id', 'active', 'terms_accepted_at', 'created_at', 'updated_at'],
             array_keys(User::sole()->getAttributes()),
         );
     }

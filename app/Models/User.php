@@ -13,7 +13,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
 
-#[Fillable(['full_name', 'email', 'password', 'role_id', 'active'])]
+#[Fillable(['full_name', 'email', 'password', 'role_id', 'active', 'terms_accepted_at'])]
 #[Hidden(['password'])]
 class User extends Authenticatable implements JWTSubject
 {
@@ -30,6 +30,7 @@ class User extends Authenticatable implements JWTSubject
         return [
             'password' => 'hashed',
             'active' => 'boolean',
+            'terms_accepted_at' => 'datetime',
         ];
     }
 

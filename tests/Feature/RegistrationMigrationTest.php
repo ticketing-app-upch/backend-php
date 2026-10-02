@@ -17,7 +17,7 @@ class RegistrationMigrationTest extends TestCase
     public function test_fresh_migrations_create_only_current_registration_columns_and_constraints(): void
     {
         $this->assertEqualsCanonicalizing(
-            ['id', 'full_name', 'email', 'password', 'role_id', 'active', 'created_at', 'updated_at'],
+            ['id', 'full_name', 'email', 'password', 'role_id', 'active', 'terms_accepted_at', 'created_at', 'updated_at'],
             Schema::getColumnListing('users'),
         );
         $this->assertEqualsCanonicalizing(

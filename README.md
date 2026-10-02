@@ -40,17 +40,17 @@ El cliente HTTP debe usar `http://localhost:8080/api` como URL base. El backend 
 
 ## Registro
 
-`POST /api/auth/register` requiere `fullName`, `email`, `password`, `role` y el documento del perfil correspondiente. `role` solo admite `CLIENT` u `ORGANIZER`.
+`POST /api/auth/register` requiere `fullName`, `email`, `password`, `role`, `acceptedTerms` y el documento del perfil correspondiente. `role` solo admite `CLIENT` u `ORGANIZER`. `acceptedTerms` debe llegar como `true` (HU-06); si falta o es falso, el registro se rechaza con `422` y no se crea ningún registro.
 
 ### Comparación de campos: antes y ahora
 
 | Parte del registro | Antes | Ahora |
 |---|---|---|
-| Ambos roles | `fullName`, `email`, `password`, `role`, `acceptedTerms` obligatorio y `marketingOptIn` opcional | `fullName`, `email`, `password` y `role`. Ya no se solicitan ni guardan `acceptedTerms` ni `marketingOptIn` |
+| Ambos roles | `fullName`, `email`, `password`, `role`, `acceptedTerms` obligatorio y `marketingOptIn` opcional | `fullName`, `email`, `password`, `role` y `acceptedTerms` obligatorio (se guarda la fecha de aceptación en `users.terms_accepted_at`). Ya no se solicita ni guarda `marketingOptIn` |
 | Usuario (`CLIENT`) | `profile.country`, `city`, `district`, `hasPeruvianNationality`, `docType`, `docNumber`, `gender`, `phoneCode` y `phone`; se admitían DNI, CE y pasaporte | Solo `profile.docNumber`: DNI de 8 dígitos |
 | Organizador (`ORGANIZER`) | `organizer.orgType`, `displayName`, `taxId`, `legalName`, `repName`, `phone`, `country`, `city` y `website`; según el tipo se admitía RUC o DNI | Solo `organizer.taxId`: RUC de 11 dígitos |
 
-Para quien se registra, los datos son **nombre, correo, contraseña y DNI** si es usuario, o **nombre, correo, contraseña y RUC** si es organizador. El cliente HTTP envía además `role` para que el backend sepa qué perfil crear. Los perfiles conservan solo su documento, `user_id`, clave primaria y marcas de tiempo; `users` conserva también `role_id` y `active` para la autenticación.
+Para quien se registra, los datos son **nombre, correo, contraseña y DNI** si es usuario, o **nombre, correo, contraseña y RUC** si es organizador. El cliente HTTP envía además `role` para que el backend sepa qué perfil crear. Los perfiles conservan solo su documento, `user_id`, clave primaria y marcas de tiempo; `users` conserva también `role_id` y `active` para la autenticación, y `terms_accepted_at` como evidencia de la aceptación de Términos y Condiciones.
 
 Cliente (`CLIENT`):
 
@@ -60,6 +60,7 @@ Cliente (`CLIENT`):
   "email": "juan@example.com",
   "password": "Secret123!",
   "role": "CLIENT",
+  "acceptedTerms": true,
   "profile": { "docNumber": "01234567" }
 }
 ```
@@ -72,6 +73,7 @@ Organizador (`ORGANIZER`):
   "email": "maria@example.com",
   "password": "Secret123!",
   "role": "ORGANIZER",
+  "acceptedTerms": true,
   "organizer": { "taxId": "20123456789" }
 }
 ```
@@ -112,15 +114,17 @@ Devuelve `200` con `token` y `user` en la misma forma que el registro. Las crede
 
 ## Esquema y migraciones
 
-Las migraciones de creación (`0001_01_01_000003` a `000005`) crean directamente las tablas de registro con la estructura actual:
+Las migraciones de creación (`0001_01_01_000003` a `000005`) crean las tablas de registro, y `2026_10_01_000000` agrega `users.terms_accepted_at`. La estructura resultante es:
 
 | Tabla | Columnas de negocio |
 |---|---|
-| `users` | `full_name`, `email`, `password`, `role_id`, `active` |
+| `users` | `full_name`, `email`, `password`, `role_id`, `active`, `terms_accepted_at` |
 | `client_profiles` | `user_id`, `doc_number` (DNI) |
 | `organizer_profiles` | `user_id`, `tax_id` (RUC) |
 
 Las tablas también incluyen sus claves primarias y marcas de tiempo. `role_id` y `user_id` son claves foráneas; `users.email`, `client_profiles.doc_number` y `organizer_profiles.tax_id` tienen índices únicos. Una instalación nueva solo necesita `php artisan migrate --seed`: no hay migraciones posteriores que creen y luego eliminen columnas del registro.
+
+`2026_10_01_000000_add_terms_accepted_at_to_users_table` agrega `users.terms_accepted_at` (nullable: el administrador sembrado no pasa por el registro público). En una base existente basta con `php artisan migrate`; no requiere `migrate:fresh`.
 
 **Base existente con el esquema anterior:** Laravel no repite una migración ya ejecutada aunque cambie su archivo. Para reconstruir esas tablas desde las migraciones actuales se necesita `php artisan migrate:fresh --seed`, que **borra todas las tablas y sus datos**; hazlo solo si puedes regenerarlos. La base usada durante este desarrollo ya tiene el esquema final, por lo que no necesita reconstruirse.
 

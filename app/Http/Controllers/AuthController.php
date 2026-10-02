@@ -50,6 +50,7 @@ class AuthController extends Controller
                     'password' => $data['password'],
                     'role_id' => $role->id,
                     'active' => true,
+                    'terms_accepted_at' => now(),
                 ]);
 
                 if ($role->name === 'CLIENT') {
