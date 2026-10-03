@@ -123,6 +123,91 @@ class RegisterTest extends TestCase
         $this->assertDatabaseCount('organizer_profiles', 0);
     }
 
+    public static function weakPasswords(): array
+    {
+        $cases = [];
+
+        foreach (['CLIENT', 'ORGANIZER'] as $role) {
+            foreach ([
+                'too short' => 'Abc12!x',
+                'without uppercase' => 'secret123!',
+                'without number' => 'Secretabc!',
+                'without special character' => 'Secret123',
+            ] as $label => $password) {
+                $cases["{$role} {$label}"] = [$role, $password];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('weakPasswords')]
+    public function test_each_password_requirement_is_enforced_for_both_roles(string $role, string $password): void
+    {
+        $payload = $this->payload($role);
+        $payload['password'] = $password;
+
+        $this->postJson('/api/auth/register', $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors('password');
+        $this->assertDatabaseCount('users', 0);
+        $this->assertDatabaseCount('client_profiles', 0);
+        $this->assertDatabaseCount('organizer_profiles', 0);
+    }
+
+    public static function unacceptedTerms(): array
+    {
+        $cases = [];
+
+        foreach (['CLIENT', 'ORGANIZER'] as $role) {
+            foreach ([
+                'null' => null,
+                'false' => false,
+                'true string' => 'true',
+                'false string' => 'false',
+                'yes string' => 'yes',
+                'on string' => 'on',
+                'one string' => '1',
+                'one integer' => 1,
+                'one float' => 1.0,
+                'zero integer' => 0,
+                'array' => [true],
+            ] as $label => $value) {
+                $cases["{$role} {$label}"] = [$role, $value];
+            }
+
+            $cases["{$role} missing field"] = [$role, null, true];
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('unacceptedTerms')]
+    public function test_terms_must_be_boolean_true_for_both_roles(string $role, mixed $value, bool $omitField = false): void
+    {
+        $payload = $this->payload($role);
+
+        if ($omitField) {
+            unset($payload['acceptedTerms']);
+        } else {
+            $payload['acceptedTerms'] = $value;
+        }
+
+        $this->postJson('/api/auth/register', $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors('acceptedTerms');
+        $this->assertDatabaseCount('users', 0);
+        $this->assertDatabaseCount('client_profiles', 0);
+        $this->assertDatabaseCount('organizer_profiles', 0);
+    }
+
+    public function test_an_eight_character_password_satisfying_the_policy_is_accepted(): void
+    {
+        $payload = $this->payload();
+        $payload['password'] = 'Abcd12!x';
+
+        $this->postJson('/api/auth/register', $payload)->assertCreated();
+        $this->assertTrue(Hash::check($payload['password'], User::sole()->password));
+    }
+
     public function test_duplicate_email_is_case_insensitive(): void
     {
         $this->postJson('/api/auth/register', $this->payload())->assertCreated();
