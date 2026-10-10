@@ -15,8 +15,6 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(RoleSeeder::class);
-
-        // La siembra de usuarios (incluido el admin inicial) se hará en
-        // un seeder aparte, una vez definamos ese alcance.
+        $this->call(AdminUserSeeder::class);
     }
 }
