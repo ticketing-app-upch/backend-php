@@ -14,18 +14,8 @@ return new class extends Migration
         Schema::create('client_profiles', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->unique()->constrained('users')->cascadeOnDelete();
-            $table->string('country', 2);
-            $table->string('city');
-            $table->string('district')->nullable();
-            $table->boolean('has_peruvian_nationality')->default(false);
-            $table->string('doc_type');
-            $table->string('doc_number');
-            $table->string('gender');
-            $table->string('phone_code');
-            $table->string('phone');
+            $table->string('doc_number')->unique();
             $table->timestamps();
-
-            $table->unique(['doc_type', 'doc_number']);
         });
     }
 
