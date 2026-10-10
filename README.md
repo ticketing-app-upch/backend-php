@@ -163,6 +163,8 @@ El JWT incluye el identificador del usuario en `sub` y el nombre de su rol en `r
 
 El login valida que la contraseña sea una cadena no vacía; la política de contraseña fuerte se aplica al registro. Los campos adicionales `role` y `role_id` se ignoran para autenticar al usuario.
 
+Los JWT nuevos duran **8 horas** (`JWT_TTL=480`, en minutos), según HU-04. La configuración predeterminada también es de 480 minutos si esa variable no está definida. Los tokens emitidos antes de cambiar la configuración conservan la expiración de su claim `exp`.
+
 ## Autorización por rol
 
 Las rutas protegidas requieren el encabezado `Authorization: Bearer <token>`. El middleware `EnsureUserHasRole` está registrado con el alias `role` en `bootstrap/app.php` y admite uno o varios roles. Para proteger una ruta nueva, utiliza primero `auth:api` y luego los roles permitidos:
@@ -175,10 +177,15 @@ Route::middleware(['auth:api', 'role:ORGANIZER,ADMIN'])->group(function () {
 
 Este es un ejemplo de reutilización. Las rutas actuales de creación de eventos y reporte de ventas permiten `ORGANIZER`; la compra de entradas permite `CLIENT`. La ausencia de un token válido devuelve `401` y un rol no permitido devuelve `403`.
 
+El alias `auth` utiliza `App\Http\Middleware\Authenticate`, que conserva la validación JWT del framework y comprueba `users.active` en cada petición protegida. Si se desactiva una cuenta con una sesión abierta, su siguiente petición protegida devuelve `401`, aunque el token aún no haya expirado. El frontend puede entonces cerrar la sesión mediante su interceptor de errores `401` (BUG-003).
+
 | Caso en una ruta protegida | HTTP | Cuerpo de respuesta |
 |---|---|---|
 | Token ausente, inválido o expirado | `401` | `{"message":"Unauthenticated."}` |
+| Cuenta desactivada con un token vigente | `401` | `{"message":"Unauthenticated."}` |
 | Token válido, pero rol no permitido | `403` | `{"message":"No tienes permiso para acceder a este recurso."}` |
+
+Para verificar BUG-004 / TC-EXP-002, utiliza `GET /api/events/{id}/sales-report` con un JWT de organizador y un evento propio. Antes del vencimiento responde `200`; después del vencimiento responde `401`, incluso sin el encabezado `Accept: application/json`. `GET /api/events` es un catálogo público y puede responder `200` con un token vencido o sin token, por lo que no sirve para comprobar autenticación.
 
 ## Respuestas de eventos, entradas y reportes
 
@@ -231,6 +238,7 @@ docker compose exec app php artisan test
 | `tests/Feature/LoginTest.php` | Login correcto de los tres roles, credenciales incorrectas, cuentas inactivas, entradas inválidas, JWT firmado con identificador y rol sin datos personales, e intento de modificar el rol desde el payload |
 | `tests/Feature/RegistrationMigrationTest.php` | Columnas del esquema final, índices únicos, claves foráneas y unicidad de DNI/RUC en la base de pruebas |
 | `tests/Feature/RoleMiddlewareTest.php` | Acceso permitido y rechazos `401` sin token y `403` con rol no autorizado |
+| `tests/Feature/SessionSecurityTest.php` | Desactivación durante una sesión, rechazo de cuentas inactivas de los tres roles sin middleware de rol, duración de 8 horas, acceso justo antes y rechazo justo después del vencimiento en una ruta real, y acceso al catálogo público con un token vencido |
 
 ## Comandos útiles
 
