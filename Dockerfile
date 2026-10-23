@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y \
     git \
     unzip \
     libzip-dev \
-    && docker-php-ext-install pdo_mysql \
+    && docker-php-ext-install pdo_mysql pdo_pgsql \
     && rm -rf /var/lib/apt/lists/*
 
 RUN echo "opcache.enable_cli=1" > /usr/local/etc/php/conf.d/opcache-cli.ini
