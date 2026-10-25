@@ -1,0 +1,34 @@
+# Dockerfile de producción para Render.
+# El Dockerfile de desarrollo (raíz) se mantiene para Docker Compose local.
+
+FROM composer:2 AS deps
+WORKDIR /app
+COPY composer.json composer.lock ./
+RUN composer install \
+    --no-dev \
+    --no-scripts \
+    --no-interaction \
+    --prefer-dist \
+    --no-autoloader
+
+FROM php:8.4-cli
+
+RUN apt-get update && apt-get install -y \
+    git \
+    unzip \
+    libzip-dev \
+    && docker-php-ext-install pdo_pgsql pdo_mysql \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN echo "opcache.enable_cli=1" > /usr/local/etc/php/conf.d/opcache-cli.ini
+
+WORKDIR /var/www/html
+
+COPY --from=deps /app/vendor ./vendor
+COPY . .
+
+RUN composer dump-autoload --optimize --no-dev
+
+EXPOSE 10000
+
+CMD ["bash", "bin/deploy.sh"]

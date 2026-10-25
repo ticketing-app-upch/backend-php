@@ -112,6 +112,9 @@ class AuthController extends Controller
 
     private function isDuplicateEntry(QueryException $e): bool
     {
-        return ($e->errorInfo[1] ?? null) === 1062;
+        // MySQL: 1062 (Duplicate entry) | PostgreSQL: 23505 (Unique violation).
+        $driverCode = $e->errorInfo[1] ?? null;
+
+        return in_array($driverCode, [1062, 23505], true);
     }
 }
