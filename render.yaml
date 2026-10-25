@@ -1,0 +1,48 @@
+# Render Blueprint: define el servicio web + Postgres gestionada.
+# Al conectar el repo en Render (Blueprint instance), cada push a main
+# despliega automáticamente.
+
+services:
+  - type: web
+    name: alpateck-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    branch: main
+    plan: free
+    healthCheckPath: /up
+    autoDeployTrigger: commit
+
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_URL
+        value: https://alpateck-backend.onrender.com
+      - key: APP_KEY
+        generateValue: true
+      - key: JWT_ALGO
+        value: HS256
+      - key: JWT_SECRET
+        sync: false # Generar con: php artisan jwt:secret --show
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DB_PORT
+        value: "5432"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: alpateck-db
+          property: connectionString
+      - key: CACHE_STORE
+        value: database
+      - key: QUEUE_CONNECTION
+        value: database
+      - key: SESSION_DRIVER
+        value: array
+      - key: LOG_CHANNEL
+        value: stderr
+
+databases:
+  - name: alpateck-db
+    databaseName: ticketing
+    plan: free
