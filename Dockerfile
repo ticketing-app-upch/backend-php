@@ -1,11 +1,15 @@
 FROM php:8.4-cli
 
-RUN apt-get update && apt-get install -y \
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     unzip \
     libzip-dev \
-    && docker-php-ext-install pdo_mysql pdo_pgsql \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
+
+RUN docker-php-ext-install pdo_mysql pdo_pgsql
 
 RUN echo "opcache.enable_cli=1" > /usr/local/etc/php/conf.d/opcache-cli.ini
 
