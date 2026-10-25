@@ -26,6 +26,8 @@ RUN docker-php-ext-install pdo_pgsql pdo_mysql
 
 RUN echo "opcache.enable_cli=1" > /usr/local/etc/php/conf.d/opcache-cli.ini
 
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
 WORKDIR /var/www/html
 
 COPY --from=deps /app/vendor ./vendor
