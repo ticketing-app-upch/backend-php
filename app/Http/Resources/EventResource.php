@@ -14,6 +14,7 @@ class EventResource extends JsonResource
     {
         return [
             'id' => (string) $this->id,
+            'venueId' => $this->venue_id === null ? null : (string) $this->venue_id,
             'title' => $this->title,
             'description' => $this->description,
             'category' => $this->category,
@@ -23,6 +24,10 @@ class EventResource extends JsonResource
             'startsAt' => $this->starts_at->toIso8601String(),
             'endsAt' => $this->ends_at?->toIso8601String(),
             'status' => $this->status,
+            'bannerUrl' => $this->banner_exists ? rtrim(config('app.url'), '/').'/api/events/'.$this->id.'/banner' : null,
+            'shareUrl' => rtrim(config('ticketing.frontend_url') ?: config('app.url'), '/').'/attendee/event/'.$this->id,
+            'isFavorite' => (bool) ($this->is_favorite ?? false),
+            'venue' => new VenueResource($this->whenLoaded('venue')),
             'zones' => EventZoneResource::collection($this->whenLoaded('zones')),
         ];
     }

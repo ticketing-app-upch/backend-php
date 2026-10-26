@@ -6,6 +6,7 @@ use App\Models\ClientProfile;
 use App\Models\OrganizerProfile;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -232,6 +233,36 @@ class RegisterTest extends TestCase
             $this->fail('Expected the profile insert to fail.');
         } catch (\RuntimeException $exception) {
             $this->assertSame('Simulated profile failure', $exception->getMessage());
+            $this->assertDatabaseCount('users', 0);
+            $this->assertDatabaseCount('client_profiles', 0);
+        } finally {
+            ClientProfile::setEventDispatcher($dispatcher);
+        }
+    }
+
+    public static function duplicateDatabaseErrors(): array
+    {
+        return [
+            'mysql' => ['23000', 1062],
+            'postgresql' => ['23505', 7],
+        ];
+    }
+
+    #[DataProvider('duplicateDatabaseErrors')]
+    public function test_database_unique_violation_returns_409_and_rolls_back(string $sqlState, int $driverCode): void
+    {
+        $dispatcher = ClientProfile::getEventDispatcher();
+        ClientProfile::setEventDispatcher(clone $dispatcher);
+        ClientProfile::creating(function () use ($sqlState, $driverCode) {
+            $previous = new \PDOException('Simulated concurrent unique violation');
+            $previous->errorInfo = [$sqlState, $driverCode, 'Duplicate document'];
+
+            throw new QueryException('testing', 'insert into client_profiles', [], $previous);
+        });
+
+        try {
+            $this->postJson('/api/auth/register', $this->payload())
+                ->assertConflict()->assertExactJson(['message' => 'Ese dato ya está registrado.']);
             $this->assertDatabaseCount('users', 0);
             $this->assertDatabaseCount('client_profiles', 0);
         } finally {

@@ -2,16 +2,37 @@
 
 API REST de la plataforma de ticketing. Usa PHP 8.4, Laravel 13, MySQL 8 y autenticación JWT (`php-open-source-saver/jwt-auth`). El entorno de desarrollo se ejecuta con Docker Compose. **La API usa MySQL** mediante la conexión `mysql` configurada en `compose.yaml` y `.env.example`.
 
+En producción, Render usa PostgreSQL mediante `DB_URL`. Para continuar con una IA,
+leer [AGENTS.md](AGENTS.md) y el [contexto breve del proyecto](docs/PROJECT_CONTEXT.md)
+antes de abrir únicamente los archivos del flujo solicitado.
+
+La implementación backend de **Demo 3** (HU-09 a HU-16 y HU-21) y los payloads
+actuales se detallan en [DEMO3_IMPLEMENTATION.md](docs/DEMO3_IMPLEMENTATION.md).
+Crear eventos ahora requiere recinto predefinido y banner; comprar requiere pago
+simulado y devuelve tickets individuales. Los contratos de registro/login se conservan.
+
 ## Funciones disponibles
 
 | Método y ruta | Acceso | Función |
 |---|---|---|
 | `POST /api/auth/register` | Público | Registra un cliente con DNI o un organizador con RUC |
 | `POST /api/auth/login` | Público | Inicia sesión con correo y contraseña |
+| `POST /api/auth/logout` | Cualquier rol autenticado | Invalida el JWT presentado |
+| `GET /api/v1/admin/usuarios` | `ADMIN` | Lista asistentes/organizadores y filtra por rol y estado |
+| `PATCH /api/v1/admin/usuarios/{id}/estado` | `ADMIN` | Activa o desactiva una cuenta no administradora |
 | `GET /api/events` | Público | Lista eventos publicados y futuros |
 | `GET /api/events/{id}` | Público | Consulta un evento |
-| `POST /api/events` | `ORGANIZER` | Crea un evento con zonas |
-| `POST /api/events/{id}/tickets` | `CLIENT` | Compra entradas |
+| `POST /api/events` | `ORGANIZER` activo | Crea un evento con recinto predefinido, banner y precios por zona |
+| `GET /api/v1/recintos` | `ORGANIZER` | Lista tres recintos demostrativos con aforos y mapas |
+| `GET /api/v1/eventos/mios` | `ORGANIZER` | Lista solo sus propios eventos |
+| `PUT/PATCH /api/events/{id}` | `ORGANIZER` | Rechaza edición con 403 en Demo 3 |
+| `GET /api/events/{id}/banner` | Público | Entrega el banner JPEG de un evento publicado |
+| `GET/POST/DELETE /api/v1/favoritos` | `CLIENT` | Consulta, agrega o elimina favoritos propios |
+| `POST /api/events/{id}/tickets` | `CLIENT` activo | Compra hasta 6 entradas entre zonas con pago simulado |
+| `GET /api/v1/tickets` | `CLIENT` | Lista sus tickets individuales |
+| `GET /api/v1/tickets/{id}` | Cliente propietario | Consulta su propia entrada |
+| `GET /api/v1/tickets/{code}/validacion` | Público | Confirmación de compra sin datos del comprador |
+| `GET /validar/{code}` | Público | Alias JSON para la URL del QR sin frontend configurado |
 | `GET /api/events/{id}/sales-report` | Organizador propietario | Consulta ventas del evento |
 
 El registro público de `ADMIN` está bloqueado. El guard `api` usa JWT; la contraseña se almacena con hash y el token incluye el rol.
@@ -137,9 +158,9 @@ Los registros rechazados por validación o duplicados no crean un usuario ni un 
 }
 ```
 
-Devuelve `200` con `token` y `user` en la misma forma que el registro. Las credenciales incorrectas o un usuario inactivo devuelven `401`; una solicitud inválida devuelve `422`.
+Devuelve `200` con `token` y `user` en la misma forma que el registro. Las credenciales incorrectas devuelven `401`; una cuenta inactiva con contraseña correcta devuelve `403`; una solicitud inválida devuelve `422`.
 
-El login está disponible para cuentas activas `CLIENT`, `ORGANIZER` y `ADMIN`. El correo se normaliza a minúsculas. Un correo inexistente, una contraseña incorrecta y una cuenta inactiva reciben el mismo cuerpo de error, sin token ni datos del usuario:
+El login está disponible para cuentas activas `CLIENT`, `ORGANIZER` y `ADMIN`. El correo se normaliza a minúsculas. Un correo inexistente y una contraseña incorrecta reciben el mismo cuerpo de error, sin token ni datos del usuario:
 
 ```json
 {
@@ -157,13 +178,64 @@ El JWT incluye el identificador del usuario en `sub` y el nombre de su rol en `r
 | Correo con mayúsculas y credenciales correctas | `200` | Se normaliza el correo y se inicia sesión |
 | Contraseña incorrecta | `401` | `{"message":"Credenciales inválidas."}`, sin token |
 | Correo inexistente | `401` | Mismo mensaje y código que una contraseña incorrecta |
-| Cuenta inactiva con contraseña correcta | `401` | Mismo mensaje; no entrega un token ni deja al usuario autenticado |
+| Cuenta inactiva con contraseña correcta | `403` | `{"message":"Tu cuenta está desactivada. Contacta al administrador"}`; sin token |
+| Cuenta inactiva con contraseña incorrecta | `401` | `{"message":"Credenciales inválidas."}`; no revela el estado |
 | Correo ausente, inválido o de más de 255 caracteres | `422` | Error de validación en `email` |
 | Contraseña ausente, vacía o con un tipo distinto de cadena | `422` | Error de validación en `password` |
 
 El login valida que la contraseña sea una cadena no vacía; la política de contraseña fuerte se aplica al registro. Los campos adicionales `role` y `role_id` se ignoran para autenticar al usuario.
 
-Los JWT nuevos duran **8 horas** (`JWT_TTL=480`, en minutos), según HU-04. La configuración predeterminada también es de 480 minutos si esa variable no está definida. Los tokens emitidos antes de cambiar la configuración conservan la expiración de su claim `exp`.
+Los JWT nuevos duran **5 minutos** por defecto (`JWT_TTL=5`), según HU-04. Puede configurarse otra duración positiva en minutos para la demo. Es vigencia desde la emisión, no un contador renovado por actividad. Los tokens emitidos antes de cambiar la configuración conservan la expiración de su claim `exp`. En Render, actualizar la variable y desplegar para recachear la configuración.
+
+## Cierre de sesión
+
+`POST /api/auth/logout` requiere `Authorization: Bearer <token>` y responde
+`200` con `{"message":"Sesión cerrada correctamente."}`. Invalida ese JWT mediante
+la blacklist; otra sesión del mismo usuario conserva su token. Una petición sin
+token, con token vencido o ya revocado recibe `401` JSON.
+
+No desactivar `JWT_BLACKLIST_ENABLED`. Render usa la caché compartida `database`
+para conservar las revocaciones entre peticiones y reinicios. La limpieza del
+token/datos del navegador y la navegación tras logout corresponden al frontend.
+
+## Administración de usuarios (HU-07 y HU-08)
+
+Estas rutas requieren `auth:api` y `role:ADMIN`: `401` sin JWT válido y `403` para
+los demás roles. No se agregan endpoints de creación o eliminación de usuarios.
+
+`GET /api/v1/admin/usuarios` admite filtros opcionales combinables:
+
+- `role=CLIENT` o `role=ORGANIZER`.
+- `active=1` (activos) o `active=0` (inactivos).
+
+Ejemplo: `/api/v1/admin/usuarios?role=ORGANIZER&active=0`. Devuelve un array
+ordenado por ID, o `[]` si no hay resultados. Nunca incluye cuentas ADMIN.
+
+```json
+[
+  {"id":"2","fullName":"Juan Perez","email":"juan@example.com","role":"CLIENT","active":true}
+]
+```
+
+Los filtros inválidos reciben `422`. Solo esta respuesta administrativa expone
+`active`; no incluye documentos, contraseña, role_id ni timestamps.
+
+`PATCH /api/v1/admin/usuarios/{id}/estado` recibe un booleano JSON estricto:
+
+```json
+{"active":false}
+```
+
+Responde `200` con el usuario actualizado en la misma forma del listado. Repetir
+el estado es idempotente. `true` reactiva la cuenta y permite login con sus mismas
+credenciales. Campos adicionales no cambian el rol, contraseña ni otros datos.
+La cuenta inexistente recibe `404`; cualquier cuenta ADMIN (incluida la propia)
+recibe `403`; un estado ausente, nulo, numérico o como cadena recibe `422`.
+
+Desactivar conserva los perfiles, eventos y tickets. Los JWT emitidos antes de la
+desactivación siguen siendo válidos hasta expirar (HU-08); no hay rechazo global
+inmediato por `active`. Un organizador inactivo conserva visibles sus eventos
+publicados, pero publicar eventos nuevos recibe `403`, incluso con JWT vigente.
 
 ## Autorización por rol
 
@@ -177,12 +249,16 @@ Route::middleware(['auth:api', 'role:ORGANIZER,ADMIN'])->group(function () {
 
 Este es un ejemplo de reutilización. Las rutas actuales de creación de eventos y reporte de ventas permiten `ORGANIZER`; la compra de entradas permite `CLIENT`. La ausencia de un token válido devuelve `401` y un rol no permitido devuelve `403`.
 
-El alias `auth` utiliza `App\Http\Middleware\Authenticate`, que conserva la validación JWT del framework y comprueba `users.active` en cada petición protegida. Si se desactiva una cuenta con una sesión abierta, su siguiente petición protegida devuelve `401`, aunque el token aún no haya expirado. El frontend puede entonces cerrar la sesión mediante su interceptor de errores `401` (BUG-003).
+El middleware `auth` del framework valida el guard JWT. Según HU-08, no comprueba
+`users.active` en todas las peticiones: las sesiones abiertas terminan al vencer
+su JWT o al cerrar sesión. El login sí verifica el estado; crear eventos y comprar
+revalidan que la cuenta esté activa. Esto reemplaza el bloqueo inmediato
+de la implementación anterior de BUG-003 para ajustarse al backlog final.
 
 | Caso en una ruta protegida | HTTP | Cuerpo de respuesta |
 |---|---|---|
 | Token ausente, inválido o expirado | `401` | `{"message":"Unauthenticated."}` |
-| Cuenta desactivada con un token vigente | `401` | `{"message":"Unauthenticated."}` |
+| Cuenta desactivada con un token vigente | Según el endpoint | Conserva acceso hasta expirar; publicar o comprar recibe `403` |
 | Token válido, pero rol no permitido | `403` | `{"message":"No tienes permiso para acceder a este recurso."}` |
 
 Para verificar BUG-004 / TC-EXP-002, utiliza `GET /api/events/{id}/sales-report` con un JWT de organizador y un evento propio. Antes del vencimiento responde `200`; después del vencimiento responde `401`, incluso sin el encabezado `Accept: application/json`. `GET /api/events` es un catálogo público y puede responder `200` con un token vencido o sin token, por lo que no sirve para comprobar autenticación.
@@ -191,13 +267,13 @@ Para verificar BUG-004 / TC-EXP-002, utiliza `GET /api/events/{id}/sales-report`
 
 | Método y ruta | Éxito | Errores previstos |
 |---|---|---|
-| `GET /api/events` | `200`: lista de eventos publicados y futuros con sus zonas; `[]` si no hay coincidencias | `422` si los filtros son inválidos. Admite `category`, `venue` y `date` con formato `YYYY-MM-DD` |
-| `GET /api/events/{id}` | `200`: datos del evento y sus zonas | `404`: `{"message":"Evento no encontrado."}` |
-| `POST /api/events` | `201`: crea y devuelve el evento publicado y sus zonas | `401` sin token válido; `403` si no es organizador; `422` por datos inválidos, fecha inicial no futura, fecha final no posterior al inicio, zonas repetidas o suma de capacidades superior a la del recinto |
-| `POST /api/events/{id}/tickets` | `201`: devuelve la compra con código, cantidad, precio total, evento y zona; descuenta la capacidad disponible | `401` sin token válido; `403` si no es cliente; `422` por zona inexistente o ajena al evento, cantidad fuera de `1`–`10` o capacidad insuficiente detectada en la validación; `409` si la capacidad disponible resulta insuficiente al confirmar la compra |
+| `GET /api/events` | `200`: publicados futuros con zonas, recinto/mapa, bannerUrl, shareUrl e isFavorite; `[]` si no hay coincidencias | `422` si los filtros son inválidos. Admite category, venue y date (`YYYY-MM-DD`, día calendario de Lima) |
+| `GET /api/events/{id}` | `200`: datos de un evento publicado y sus zonas | `404`: `{"message":"Evento no disponible"}` si no existe o no está publicado |
+| `POST /api/events` | `201`: evento publicado, banner y zonas heredadas del recinto | `401` sin JWT; `403` por rol/cuenta inactiva; `422` por campos, banner, fechas o precios inválidos; `409` por otro evento en el mismo recinto y día de Lima |
+| `POST /api/events/{id}/tickets` | `201`: paymentStatus, quantity, totalPrice y array tickets; un ticket por entrada | `401` sin JWT; `403` por rol/cuenta inactiva; `404` evento no disponible; `422` por pago/zona inválidos o total superior a 6; `409` por aforo insuficiente |
 | `GET /api/events/{id}/sales-report` | `200`: devuelve `event`, `summary` y `zones`; los totales de ventas e ingresos son cero si no hubo ventas | `401` sin token válido; `403` si no es organizador o no es dueño del evento; `404` si el evento no existe |
 
-En la compra, el error `409` devuelve `{"message":"No hay suficiente capacidad disponible en esa zona."}`. Consultar el reporte de un evento ajeno devuelve `403` con `{"message":"No tienes permiso para consultar este reporte."}`. Una compra rechazada por falta de capacidad durante la transacción no descuenta cupos ni crea la entrada.
+En la compra, el error `409` devuelve `{"message":"Aforo insuficiente para la cantidad solicitada"}`. Consultar el reporte de un evento ajeno devuelve `403` con `{"message":"No tienes permiso para consultar este reporte."}`. Una compra rechazada no descuenta cupos ni crea entradas parcialmente.
 
 ### Formato de los errores de validación
 
@@ -238,7 +314,33 @@ docker compose exec app php artisan test
 | `tests/Feature/LoginTest.php` | Login correcto de los tres roles, credenciales incorrectas, cuentas inactivas, entradas inválidas, JWT firmado con identificador y rol sin datos personales, e intento de modificar el rol desde el payload |
 | `tests/Feature/RegistrationMigrationTest.php` | Columnas del esquema final, índices únicos, claves foráneas y unicidad de DNI/RUC en la base de pruebas |
 | `tests/Feature/RoleMiddlewareTest.php` | Acceso permitido y rechazos `401` sin token y `403` con rol no autorizado |
-| `tests/Feature/SessionSecurityTest.php` | Desactivación durante una sesión, rechazo de cuentas inactivas de los tres roles sin middleware de rol, duración de 8 horas, acceso justo antes y rechazo justo después del vencimiento en una ruta real, y acceso al catálogo público con un token vencido |
+| `tests/Feature/SessionSecurityTest.php` | Sesiones abiertas válidas tras desactivar hasta el vencimiento, duración configurable en minutos, acceso antes/rechazo después de expirar y catálogo público |
+| `tests/Feature/LogoutTest.php` | Logout de los tres roles, revocación del JWT presentado, otras sesiones y rechazo de tokens inválidos/revocados |
+| `tests/Feature/AdminUserManagementTest.php` | Listado/filtros, permisos ADMIN, cambios idempotentes, reactivación, protección de administradores y conservación de datos/sesiones |
+| `tests/Feature/AdminUserSeederTest.php` | Seeding idempotente, correo normalizado, configuración ausente/parcial y conflictos de rol |
+| `tests/Feature/StoreEventTest.php` | Recintos/mapas, banners, fechas de Lima, publicación atómica, permisos, inmutabilidad y Mis Eventos |
+| `tests/Feature/FavoriteTest.php` | Favoritos propios, idempotencia, índice único y catálogo personalizado |
+| `tests/Feature/PurchaseTicketTest.php` | Pago simulado, máximo 6, varias zonas, aforo, rollback y tickets individuales |
+| `tests/Feature/TicketReadTest.php` | Propiedad de entradas, snapshots inmutables y confirmación pública sin datos personales |
+| `tests/Feature/DemoThreeMigrationTest.php` | Migraciones reversibles e individualización de ventas antiguas conservando códigos/importes/stock |
+
+## Despliegue en Render
+
+`render.yaml` define el servicio Docker y PostgreSQL. `bin/deploy.sh` cachea
+configuración/rutas/vistas, aplica migraciones y ejecuta `DatabaseSeeder`, que
+siembra los roles y la cuenta administradora configurada de manera idempotente.
+En el panel privado de Render, completar `INITIAL_ADMIN_NAME`,
+`INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD`; las tres vacías omiten el admin,
+y una configuración parcial detiene el seeding. No poner credenciales en Git.
+`JWT_TTL=5` se define en el Blueprint; revisar variables ya existentes en Render.
+
+El servicio existente es `https://alpateck-backend.onrender.com`; su salud se
+consulta en `/up`. Las modificaciones locales requieren publicación y despliegue
+autorizados antes de estar disponibles allí. Demo 3 requiere las cuatro migraciones
+aditivas `2026_10_25_*` y `VenueSeeder` (incluido en DatabaseSeeder); no reconstruir
+ni borrar la base. El arranque existente ya ejecuta migrate y db:seed.
+Configurar APP_URL con el dominio público del backend y FRONTEND_URL con el de
+Angular cuando se integre: se usan para bannerUrl, shareUrl y validationUrl.
 
 ## Comandos útiles
 

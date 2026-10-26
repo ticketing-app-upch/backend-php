@@ -14,6 +14,7 @@ class EventZoneResource extends JsonResource
     {
         return [
             'id' => (string) $this->id,
+            'venueZoneId' => $this->venue_zone_id === null ? null : (string) $this->venue_zone_id,
             'name' => $this->name,
             'capacity' => $this->capacity,
             'availableCapacity' => $this->available_capacity,

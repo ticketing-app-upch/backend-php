@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'event_id',
+    'venue_zone_id',
     'name',
     'capacity',
     'available_capacity',

@@ -19,6 +19,8 @@ class IndexEventTest extends TestCase
         parent::setUp();
 
         $this->seed(RoleSeeder::class);
+        // Mantiene futuras las fechas fijas de los escenarios, sin depender del reloj real.
+        $this->travelTo(now()->setDate(2026, 10, 1)->startOfDay());
     }
 
     /**

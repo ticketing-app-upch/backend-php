@@ -99,7 +99,7 @@ class AuthController extends Controller
         if (! $user->active) {
             auth('api')->logout();
 
-            return response()->json(['message' => 'Credenciales inválidas.'], 401);
+            return response()->json(['message' => 'Tu cuenta está desactivada. Contacta al administrador'], 403);
         }
 
         $user->load(['role', 'clientProfile', 'organizerProfile']);
@@ -110,11 +110,17 @@ class AuthController extends Controller
         ]);
     }
 
+    public function logout(): JsonResponse
+    {
+        auth('api')->logout();
+
+        return response()->json(['message' => 'Sesión cerrada correctamente.']);
+    }
+
     private function isDuplicateEntry(QueryException $e): bool
     {
         // MySQL: 1062 (Duplicate entry) | PostgreSQL: 23505 (Unique violation).
-        $driverCode = $e->errorInfo[1] ?? null;
-
-        return in_array($driverCode, [1062, 23505], true);
+        return ($e->errorInfo[0] ?? null) === '23505'
+            || ($e->errorInfo[1] ?? null) === 1062;
     }
 }

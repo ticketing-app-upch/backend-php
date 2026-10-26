@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests\Event;
 
-use App\Models\EventZone;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class PurchaseTicketRequest extends FormRequest
 {
@@ -12,32 +12,28 @@ class PurchaseTicketRequest extends FormRequest
         return true;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function rules(): array
     {
         return [
-            'zoneId' => ['required', 'integer', 'exists:event_zones,id', function ($attribute, $value, $fail) {
-                $zone = EventZone::find($value);
-
-                if (! $zone || $zone->event_id !== (int) $this->route('id')) {
-                    $fail('La zona no pertenece a este evento.');
-                }
-            }],
-            'quantity' => ['required', 'integer', 'min:1', 'max:10', function ($attribute, $value, $fail) {
-                $zoneId = $this->input('zoneId');
-
-                if (! $zoneId) {
-                    return;
-                }
-
-                $zone = EventZone::find($zoneId);
-
-                if ($zone && $value > $zone->available_capacity) {
-                    $fail('No hay suficiente capacidad disponible en esa zona.');
-                }
-            }],
+            'zoneId' => ['required_without:items', 'prohibits:items', 'integer', 'min:1'],
+            'quantity' => ['required_with:zoneId', 'prohibits:items', 'integer', 'min:1', 'max:6'],
+            'items' => ['required_without:zoneId', 'prohibits:zoneId,quantity', 'array', 'min:1', 'max:6'],
+            'items.*.zoneId' => ['required', 'integer', 'min:1', 'distinct'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:6'],
+            'payment' => ['required', 'array'],
+            'payment.cardNumber' => ['required', 'string', 'regex:/\A[0-9]{13,19}\z/'],
+            'payment.cvv' => ['required', 'string', 'regex:/\A[0-9]{3,4}\z/'],
+            'payment.expiresAt' => ['required', 'date_format:Y-m-d', 'after:today'],
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator) {
+            if ($validator->errors()->isEmpty() && $this->has('items')
+                && array_sum(array_column($this->input('items'), 'quantity')) > 6) {
+                $validator->errors()->add('items', 'El máximo es de 6 entradas por compra entre todas las zonas.');
+            }
+        });
     }
 }
