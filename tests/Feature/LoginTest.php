@@ -115,6 +115,18 @@ class LoginTest extends TestCase
         $this->postJson('/api/auth/login', [
             'email' => $user->email,
             'password' => 'Secret123!',
+        ])->assertForbidden()
+            ->assertExactJson(['message' => 'Tu cuenta está desactivada. Contacta al administrador']);
+        $this->assertGuest('api');
+    }
+
+    public function test_inactive_account_with_wrong_password_still_returns_generic_401(): void
+    {
+        $user = $this->createUser('CLIENT', false);
+
+        $this->postJson('/api/auth/login', [
+            'email' => $user->email,
+            'password' => 'Wrong123!',
         ])->assertUnauthorized()
             ->assertExactJson(['message' => 'Credenciales inválidas.']);
         $this->assertGuest('api');

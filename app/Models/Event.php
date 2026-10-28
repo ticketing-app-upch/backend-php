@@ -5,10 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'organizer_id',
+    'venue_id',
     'title',
     'description',
     'category',
@@ -18,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'starts_at',
     'ends_at',
     'status',
+    'city', 'image_url', 'published_at', 'max_per_order',
 ])]
 class Event extends Model
 {
@@ -27,6 +31,8 @@ class Event extends Model
             'venue_capacity' => 'integer',
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'published_at' => 'datetime',
+            'max_per_order' => 'integer',
         ];
     }
 
@@ -38,5 +44,20 @@ class Event extends Model
     public function zones(): HasMany
     {
         return $this->hasMany(EventZone::class);
+    }
+
+    public function venue(): BelongsTo
+    {
+        return $this->belongsTo(Venue::class);
+    }
+
+    public function banner(): HasOne
+    {
+        return $this->hasOne(EventBanner::class);
+    }
+
+    public function favoritedBy(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'favorites')->withTimestamps();
     }
 }

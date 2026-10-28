@@ -82,4 +82,21 @@ class AdminUserSeederTest extends TestCase
         $this->expectException(ValidationException::class);
         $this->seed(DatabaseSeeder::class);
     }
+
+    public function test_admin_email_is_normalized_for_login_and_idempotent_seeding(): void
+    {
+        config([
+            'initial_admin.name' => 'Administradora Inicial',
+            'initial_admin.email' => ' ADMIN@EXAMPLE.COM ',
+            'initial_admin.password' => 'Secure123!',
+        ]);
+        $this->seed(DatabaseSeeder::class);
+        config(['initial_admin.email' => 'admin@example.com']);
+        $this->seed(DatabaseSeeder::class);
+
+        $this->assertDatabaseCount('users', 1);
+        $this->postJson('/api/auth/login', [
+            'email' => 'admin@example.com', 'password' => 'Secure123!',
+        ])->assertOk()->assertJsonPath('user.role', 'ADMIN');
+    }
 }

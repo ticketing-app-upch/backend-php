@@ -6,6 +6,7 @@ use App\Models\ClientProfile;
 use App\Models\OrganizerProfile;
 use App\Models\User;
 use Database\Seeders\RoleSeeder;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -239,6 +240,36 @@ class RegisterTest extends TestCase
         }
     }
 
+    public static function duplicateDatabaseErrors(): array
+    {
+        return [
+            'mysql' => ['23000', 1062],
+            'postgresql' => ['23505', 7],
+        ];
+    }
+
+    #[DataProvider('duplicateDatabaseErrors')]
+    public function test_database_unique_violation_returns_409_and_rolls_back(string $sqlState, int $driverCode): void
+    {
+        $dispatcher = ClientProfile::getEventDispatcher();
+        ClientProfile::setEventDispatcher(clone $dispatcher);
+        ClientProfile::creating(function () use ($sqlState, $driverCode) {
+            $previous = new \PDOException('Simulated concurrent unique violation');
+            $previous->errorInfo = [$sqlState, $driverCode, 'Duplicate document'];
+
+            throw new QueryException('testing', 'insert into client_profiles', [], $previous);
+        });
+
+        try {
+            $this->postJson('/api/auth/register', $this->payload())
+                ->assertConflict()->assertExactJson(['message' => 'Ese dato ya está registrado.']);
+            $this->assertDatabaseCount('users', 0);
+            $this->assertDatabaseCount('client_profiles', 0);
+        } finally {
+            ClientProfile::setEventDispatcher($dispatcher);
+        }
+    }
+
     public function test_duplicate_dni_creates_no_orphan_user(): void
     {
         $payload = $this->payload();
@@ -259,7 +290,7 @@ class RegisterTest extends TestCase
         $this->assertDatabaseCount('organizer_profiles', 1);
     }
 
-    public function test_removed_fields_are_ignored_and_not_returned(): void
+    public function test_optional_frontend_client_fields_are_preserved_in_details(): void
     {
         $payload = $this->payload();
         $payload['marketingOptIn'] = true;
@@ -270,24 +301,22 @@ class RegisterTest extends TestCase
         ];
 
         $response = $this->postJson('/api/auth/register', $payload)->assertCreated()
-            ->assertJsonMissingPath('user.marketingOptIn')
+            ->assertJsonPath('user.marketingOptIn', true)
             ->assertJsonMissingPath('user.acceptedTerms');
         foreach (array_keys($payload['profile']) as $field) {
-            if ($field !== 'docNumber') {
-                $response->assertJsonMissingPath("user.profile.{$field}");
-            }
+            $response->assertJsonPath("user.profile.{$field}", $payload['profile'][$field]);
         }
         $this->assertEqualsCanonicalizing(
-            ['id', 'user_id', 'doc_number', 'created_at', 'updated_at'],
+            ['id', 'user_id', 'doc_number', 'details', 'created_at', 'updated_at'],
             array_keys(ClientProfile::sole()->getAttributes()),
         );
         $this->assertEqualsCanonicalizing(
-            ['id', 'full_name', 'email', 'password', 'role_id', 'active', 'terms_accepted_at', 'created_at', 'updated_at'],
+            ['id', 'full_name', 'email', 'password', 'role_id', 'active', 'terms_accepted_at', 'marketing_opt_in', 'created_at', 'updated_at'],
             array_keys(User::sole()->getAttributes()),
         );
     }
 
-    public function test_removed_organizer_fields_are_ignored_and_not_returned(): void
+    public function test_optional_frontend_organizer_fields_are_preserved_in_details(): void
     {
         $payload = $this->payload('ORGANIZER');
         $payload['organizer'] += [
@@ -298,12 +327,10 @@ class RegisterTest extends TestCase
         ];
         $response = $this->postJson('/api/auth/register', $payload)->assertCreated();
         foreach (array_keys($payload['organizer']) as $field) {
-            if ($field !== 'taxId') {
-                $response->assertJsonMissingPath("user.organizer.{$field}");
-            }
+            $response->assertJsonPath("user.organizer.{$field}", $payload['organizer'][$field]);
         }
         $this->assertEqualsCanonicalizing(
-            ['id', 'user_id', 'tax_id', 'created_at', 'updated_at'],
+            ['id', 'user_id', 'tax_id', 'details', 'created_at', 'updated_at'],
             array_keys(OrganizerProfile::sole()->getAttributes()),
         );
     }
