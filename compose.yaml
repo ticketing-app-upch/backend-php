@@ -6,6 +6,8 @@ services:
     container_name: ticketing_backend
     ports:
       - "8080:8000"
+      # El frontend Demo 3 consulta la cotización base en este puerto.
+      - "8000:8000"
     env_file:
       - .env
     volumes:

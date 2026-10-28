@@ -24,10 +24,10 @@ class StoreEventTest extends TestCase
     public function test_venues_are_seeded_idempotently_with_capacities_and_renderable_maps(): void
     {
         $this->seed(VenueSeeder::class);
-        $this->assertDatabaseCount('venues', 3);
-        $this->assertDatabaseCount('venue_zones', 9);
+        $this->assertDatabaseCount('venues', 15);
+        $this->assertDatabaseCount('venue_zones', 50);
         $response = $this->getJson('/api/v1/recintos', $this->headersFor($this->actor('ORGANIZER')))
-            ->assertOk()->assertJsonCount(3)->assertJsonPath('0.map.viewBox', '0 0 1000 620');
+            ->assertOk()->assertJsonCount(15)->assertJsonPath('0.map.viewBox', '0 0 1000 620');
         foreach ($response->json() as $venue) {
             $this->assertSame($venue['capacity'], array_sum(array_column($venue['zones'], 'capacity')));
             $this->assertSame('rect', $venue['zones'][0]['shape']['type']);

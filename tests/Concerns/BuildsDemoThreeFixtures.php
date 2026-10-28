@@ -65,10 +65,10 @@ trait BuildsDemoThreeFixtures
             'venue_address' => $venue->address, 'venue_capacity' => $venue->capacity,
             'starts_at' => now()->addMonth(), 'status' => 'PUBLISHED',
         ], $overrides));
-        foreach ($venue->zones as $zone) {
+        foreach ($venue->zones as $index => $zone) {
             $event->zones()->create([
                 'venue_zone_id' => $zone->id, 'name' => $zone->name,
-                'capacity' => $zone->capacity, 'available_capacity' => $zone->capacity,
+                'capacity' => ($index + 1) * 100, 'available_capacity' => ($index + 1) * 100,
                 'base_price' => 50,
             ]);
         }

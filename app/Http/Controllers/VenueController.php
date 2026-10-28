@@ -10,6 +10,6 @@ class VenueController extends Controller
 {
     public function index(): JsonResponse
     {
-        return response()->json(VenueResource::collection(Venue::with('zones')->orderBy('id')->get()));
+        return response()->json(VenueResource::collection(Venue::with('zones')->whereNotNull('slug')->orderBy('id')->get()));
     }
 }

@@ -19,6 +19,8 @@ class TicketResource extends JsonResource
             'code' => $this->code,
             'quantity' => $this->quantity,
             'totalPrice' => (float) $this->total_price,
+            'serviceFee' => (float) $this->service_fee,
+            'status' => $this->resource->relationLoaded('order') ? ($this->order?->status ?? 'CONFIRMADA') : 'CONFIRMADA',
             'unitPrice' => (float) ($this->unit_price ?? $this->total_price / max(1, $this->quantity)),
             'validationUrl' => $validationUrl,
             'qrValue' => $validationUrl,

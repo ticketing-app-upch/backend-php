@@ -19,6 +19,8 @@ class EventZoneResource extends JsonResource
             'capacity' => $this->capacity,
             'availableCapacity' => $this->available_capacity,
             'basePrice' => (float) $this->base_price,
+            'price' => (float) $this->base_price,
+            'sold' => $this->capacity - $this->available_capacity,
         ];
     }
 }

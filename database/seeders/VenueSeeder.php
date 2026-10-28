@@ -9,21 +9,19 @@ class VenueSeeder extends Seeder
 {
     public function run(): void
     {
-        // Datos demostrativos; no representan aforos de recintos reales.
-        foreach ([
-            ['Auditorio AlpaTeck', 'Recinto demostrativo Lima', [100, 200, 300]],
-            ['Arena AlpaTeck', 'Recinto demostrativo Arequipa', [300, 600, 900]],
-            ['Teatro AlpaTeck', 'Recinto demostrativo Cusco', [75, 150, 225]],
-        ] as [$name, $address, $capacities]) {
-            $venue = Venue::firstOrCreate(['name' => $name], [
-                'address' => $address, 'capacity' => array_sum($capacities),
+        // Catálogo de maqueta de la rama demo3; conserva los IDs de filas existentes.
+        $catalog = json_decode(file_get_contents(database_path('data/frontend-venues.json')), true, flags: JSON_THROW_ON_ERROR);
+        foreach ($catalog as $item) {
+            $venue = Venue::updateOrCreate(['name' => $item['name']], [
+                'slug' => $item['id'], 'address' => $item['address'], 'city' => $item['city'],
+                'map_image' => $item['map'], 'capacity' => array_sum(array_column($item['zones'], 'capacity')),
             ]);
-            foreach (['VIP', 'Preferencial', 'General'] as $index => $zoneName) {
-                $venue->zones()->firstOrCreate(['name' => $zoneName], [
-                    'capacity' => $capacities[$index],
-                    'map_shape' => ['type' => 'rect', 'x' => 60, 'y' => 140 + $index * 140,
-                        'width' => 880, 'height' => 120,
-                        'color' => ['#be185d', '#6d28d9', '#0369a1'][$index]],
+            foreach ($item['zones'] as $index => $zone) {
+                $venue->zones()->updateOrCreate(['name' => $zone['name']], [
+                    'capacity' => $zone['capacity'],
+                    'map_shape' => ['type' => 'rect', 'x' => 60, 'y' => 140 + $index * 40,
+                        'width' => 880, 'height' => 32,
+                        'color' => ['#be185d', '#6d28d9', '#0369a1'][$index % 3]],
                 ]);
             }
         }

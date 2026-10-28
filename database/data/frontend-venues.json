@@ -1,0 +1,337 @@
+[
+  {
+    "id": "monumental",
+    "name": "Estadio Monumental",
+    "address": "Av. Javier Prado Este 7596, Ate, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/estadio-monumental-zonas.png",
+    "zones": [
+      {
+        "name": "Occidente Lateral A",
+        "capacity": 900
+      },
+      {
+        "name": "Occidente Central B",
+        "capacity": 800
+      },
+      {
+        "name": "Occidente Central C",
+        "capacity": 800
+      },
+      {
+        "name": "Butaca Negra",
+        "capacity": 150
+      },
+      {
+        "name": "Occidente Central D",
+        "capacity": 800
+      },
+      {
+        "name": "Occidente Central E",
+        "capacity": 800
+      },
+      {
+        "name": "Occidente Lateral F",
+        "capacity": 900
+      },
+      {
+        "name": "Oriente",
+        "capacity": 5000
+      },
+      {
+        "name": "Norte",
+        "capacity": 8000
+      },
+      {
+        "name": "Tribuna Familiar Sur",
+        "capacity": 8000
+      }
+    ]
+  },
+  {
+    "id": "nacional",
+    "name": "Estadio Nacional",
+    "address": "Calle José Díaz s/n, Santa Beatriz, Cercado de Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/estadio-nacional-zonas.png",
+    "zones": [
+      {
+        "name": "Tribuna Norte",
+        "capacity": 10000
+      },
+      {
+        "name": "Oriente",
+        "capacity": 12000
+      },
+      {
+        "name": "Occidente",
+        "capacity": 12000
+      },
+      {
+        "name": "VIP",
+        "capacity": 3000
+      },
+      {
+        "name": "Platinum",
+        "capacity": 3000
+      }
+    ]
+  },
+  {
+    "id": "san-marcos",
+    "name": "Estadio San Marcos",
+    "address": "Av. Venezuela 3855, San Miguel, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/estadio-san-marcos-zonas.png",
+    "zones": [
+      {
+        "name": "Norte",
+        "capacity": 8000
+      },
+      {
+        "name": "Oriente",
+        "capacity": 8000
+      },
+      {
+        "name": "Occidente",
+        "capacity": 8000
+      },
+      {
+        "name": "VIP",
+        "capacity": 2500
+      },
+      {
+        "name": "Platinum",
+        "capacity": 2500
+      }
+    ]
+  },
+  {
+    "id": "arena-1",
+    "name": "Arena 1 — Costa Verde",
+    "address": "Costa Verde, San Miguel, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/arena-1-costa-verde.png",
+    "zones": [
+      {
+        "name": "General",
+        "capacity": 2000
+      },
+      {
+        "name": "VIP",
+        "capacity": 800
+      }
+    ]
+  },
+  {
+    "id": "ccl",
+    "name": "Centro de Convenciones de Lima",
+    "address": "San Borja, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/centro-de-convenciones-de-lima.png",
+    "zones": [
+      {
+        "name": "General",
+        "capacity": 700
+      },
+      {
+        "name": "Pro (incluye talleres)",
+        "capacity": 200
+      }
+    ]
+  },
+  {
+    "id": "circuito-costa-verde",
+    "name": "Circuito Costa Verde",
+    "address": "Costa Verde, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/circuito-costa-verde.png",
+    "zones": [
+      {
+        "name": "Reto 10K",
+        "capacity": 1000
+      },
+      {
+        "name": "Inscripción 21K",
+        "capacity": 800
+      },
+      {
+        "name": "Inscripción 42K",
+        "capacity": 500
+      }
+    ]
+  },
+  {
+    "id": "dibos",
+    "name": "Coliseo Eduardo Dibós",
+    "address": "San Borja, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/coliseo-eduardo-dibos.png",
+    "zones": [
+      {
+        "name": "Occidente",
+        "capacity": 800
+      },
+      {
+        "name": "Oriente",
+        "capacity": 800
+      },
+      {
+        "name": "Populares",
+        "capacity": 1600
+      }
+    ]
+  },
+  {
+    "id": "costa-21",
+    "name": "Explanada Costa Verde",
+    "address": "Costa 21, San Miguel, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/explanada-costa-verde-costa-21-san-miguel.png",
+    "zones": [
+      {
+        "name": "General",
+        "capacity": 2000
+      },
+      {
+        "name": "VIP",
+        "capacity": 700
+      },
+      {
+        "name": "Palco Premium",
+        "capacity": 300
+      }
+    ]
+  },
+  {
+    "id": "gtn",
+    "name": "Gran Teatro Nacional",
+    "address": "Av. Javier Prado Este 2225, San Borja, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/gran-teatro-nacional.png",
+    "zones": [
+      {
+        "name": "Platea",
+        "capacity": 600
+      },
+      {
+        "name": "Balcón",
+        "capacity": 300
+      },
+      {
+        "name": "Galería",
+        "capacity": 300
+      }
+    ]
+  },
+  {
+    "id": "jazz-zone",
+    "name": "Jazz Zone, Miraflores",
+    "address": "Miraflores, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/jazz-zone-miraflores.png",
+    "zones": [
+      {
+        "name": "Mesa",
+        "capacity": 120
+      },
+      {
+        "name": "Barra",
+        "capacity": 40
+      }
+    ]
+  },
+  {
+    "id": "parque-exposicion",
+    "name": "Parque de la Exposición",
+    "address": "Cercado de Lima, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/parque-de-la-exposicion.png",
+    "zones": [
+      {
+        "name": "Platea",
+        "capacity": 800
+      },
+      {
+        "name": "Palco",
+        "capacity": 250
+      },
+      {
+        "name": "Campo",
+        "capacity": 1500
+      }
+    ]
+  },
+  {
+    "id": "plaza-armas",
+    "name": "Plaza de Armas de Lima",
+    "address": "Cercado de Lima, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/plaza-de-armas-de-lima.png",
+    "zones": [
+      {
+        "name": "Platea",
+        "capacity": 500
+      },
+      {
+        "name": "General",
+        "capacity": 1500
+      }
+    ]
+  },
+  {
+    "id": "la-plaza",
+    "name": "Teatro La Plaza",
+    "address": "Larcomar, Miraflores, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/teatro-la-plaza.png",
+    "zones": [
+      {
+        "name": "Platea",
+        "capacity": 150
+      },
+      {
+        "name": "Mezzanine",
+        "capacity": 80
+      }
+    ]
+  },
+  {
+    "id": "municipal",
+    "name": "Teatro Municipal",
+    "address": "Jirón Ica 377, Cercado de Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/teatro-municipal.png",
+    "zones": [
+      {
+        "name": "Platea baja",
+        "capacity": 300
+      },
+      {
+        "name": "Platea alta",
+        "capacity": 220
+      },
+      {
+        "name": "Galería",
+        "capacity": 200
+      }
+    ]
+  },
+  {
+    "id": "westin",
+    "name": "The Westin Lima",
+    "address": "San Isidro, Lima",
+    "city": "Lima",
+    "map": "/recintos/demo3/the-westin-lima.png",
+    "zones": [
+      {
+        "name": "General",
+        "capacity": 400
+      },
+      {
+        "name": "Premium (networking)",
+        "capacity": 150
+      }
+    ]
+  }
+]

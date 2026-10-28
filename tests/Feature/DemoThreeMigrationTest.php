@@ -21,6 +21,7 @@ class DemoThreeMigrationTest extends TestCase
             '2026_10_25_000002_add_predefined_venues_and_banners_to_events.php',
             '2026_10_25_000003_create_favorites_table.php',
             '2026_10_25_000004_add_ticket_snapshots.php',
+            '2026_10_28_000001_add_frontend_contract_support.php',
         ];
         foreach (array_reverse($files) as $file) {
             (require database_path('migrations/'.$file))->down();

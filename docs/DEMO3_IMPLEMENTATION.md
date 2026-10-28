@@ -1,5 +1,9 @@
 # Demo 3 — backend de las Épicas 2 y 3
 
+> Este documento registra la entrega del 2026-10-25. La adaptación posterior al
+> frontend `demo3` está en [FRONTEND_COMPATIBILITY.md](FRONTEND_COMPATIBILITY.md)
+> y prevalece para JSON de eventos, catálogo de recintos y órdenes.
+
 Fecha: 2026-10-25. Alcance: HU-09, HU-10, HU-11, HU-12, HU-13, HU-14,
 HU-15, HU-16 y HU-21, según Ticketing_Backlog_Demo3.xlsx. Solo backend.
 La rama de entrega es feat/demo_3 e incluye los cambios de la Épica 1.

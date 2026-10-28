@@ -1,6 +1,6 @@
 # Contexto del proyecto para IA
 
-Actualizado: 2026-10-25. Alcance de este checkout: **backend-php de AlpaTeck**.
+Actualizado: 2026-10-28. Alcance de este checkout: **backend-php de AlpaTeck**.
 Lee primero AGENTS.md y este archivo. Después consulta únicamente los archivos
 del flujo que vas a cambiar. README.md conserva los ejemplos y contratos completos.
 Si una implementación cambia, actualiza este resumen; el código y las migraciones
@@ -10,7 +10,9 @@ actuales prevalecen sobre documentos antiguos.
 
 AlpaTeck es una plataforma de venta de entradas. Roles internos: CLIENT
 (asistente), ORGANIZER (organizador) y ADMIN (administrador). El frontend Angular
-es otro repositorio y no está incluido aquí. El backlog también contempla una
+es otro repositorio; existe como hermano `../frontend-angular`, rama demo3,
+solo como referencia de contrato, sin modificarlo ni integrarlo permanentemente.
+El backlog también contempla una
 cola/anti-scalping en Python; ese microservicio no existe en este checkout.
 
 La Épica 1 corresponde conjuntamente a las demos 1 y 2, según confirmación del
@@ -31,6 +33,7 @@ y limpieza del navegador corresponden a Angular y no se verifican aquí.
 - `roles → users → client_profiles/organizer_profiles` (perfiles 1:1).
   Email, DNI y RUC únicos. Usuarios tienen `active` y `terms_accepted_at`.
 - `users → events → event_zones → tickets`; los tickets también pertenecen a users.
+  `ticket_orders` agrupa tickets con snapshots, importes, estado e idempotencia.
   Nuevos: venues/venue_zones, event_banners y favorites (UNIQUE user_id,event_id).
   Tickets tienen snapshots de precio/zona/fecha. Las migraciones son la fuente del
   esquema; docs/database/schema.sql está desactualizado.
@@ -46,6 +49,7 @@ y limpieza del navegador corresponden a Angular y no se verifican aquí.
 | Catálogo/creación/compra/reporte | EventController, Requests/Event, Resources de eventos/tickets/ventas | IndexEventTest, StoreEventTest, PurchaseTicketTest, SalesReportTest |
 | Recintos/mapas y favoritos | VenueController, VenueSeeder, VenueResource; FavoriteController | StoreEventTest, FavoriteTest |
 | Mis Tickets/validación pública | TicketController, TicketResource, Ticket | TicketReadTest, DemoThreeMigrationTest |
+| Compatibilidad Angular demo3 | OrderController, PricingController, OrderResource, Requests/Event, catálogo JSON | FrontendCompatibilityTest |
 | Rutas y despliegue | routes/api.php, render.yaml, bin/deploy.sh, Dockerfile.render | route:list y pruebas HTTP |
 
 Los controladores están en app/Http/Controllers; requests y resources bajo
@@ -83,14 +87,23 @@ capa adicional de servicios/repositorios. Los recursos usan camelCase e IDs stri
   No hay alta/eliminación administrativa ni cambios de estado sobre administradores.
 - Logout usa blacklist y caché compartida (database en Render); no desactivar
   JWT_BLACKLIST_ENABLED si se necesita revocación. El navegador debe borrar sus datos.
+- Perfiles opcionales del frontend y marketingOptIn se conservan con lista explícita
+  de campos; detalles en JSON de client_profiles/organizer_profiles. No aceptar roles
+  ni verificationStatus dentro de esos datos. Se mantienen DNI/RUC y permisos.
 
 ## Demo 3: eventos, favoritos y tickets
 
-Contrato completo y archivos de esta entrega: docs/DEMO3_IMPLEMENTATION.md.
-Consultar ese documento solo si se trabaja en estos flujos.
+Contrato vigente: docs/FRONTEND_COMPATIBILITY.md. Entrega anterior registrada en
+docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
 
-- GET /api/v1/recintos (ORGANIZER): tres recintos ficticios de demo y sus zonas,
-  aforos y geometrías para renderizar mapas. Los aforos no son editables por API.
+- GET /api/v1/recintos (ORGANIZER): 15 recintos y 50 zonas exactos del catálogo
+  Angular en database/data/frontend-venues.json. Aforos de maqueta, nombres exactos,
+  slug y geometría auxiliar. No borrar los tres recintos antiguos si ya existen;
+  se conservan como históricos y no se muestran en el catálogo nuevo.
+- POST /api/events también recibe EventItem JSON: name, venue string, city,
+  zonas con name/capacity/sold=0/price y dos imágenes JPEG Base64 distintas.
+  Resuelve recinto/zonas en BD y verifica aforos; el dueño procede del JWT.
+  JSON exige 24 horas de separación; frontend IDs temporales no son IDs de compra.
 - POST /api/events (ORGANIZER activo): multipart con venueId, archivo banner JPEG
   <=2 MiB, mínimo 1920×480/4:1, startsAt futuro y zones[{venueZoneId,basePrice>0}].
   Hereda nombre/dirección/aforos del recinto; exige todas sus zonas. Transacción
@@ -100,6 +113,11 @@ Consultar ese documento solo si se trabaja en estos flujos.
   zonas/precios/cupos, venue/mapa, bannerUrl, shareUrl e isFavorite opcional por JWT.
   GET /api/events/{id}: no publicado/inexistente 404. GET .../{id}/banner: JPEG;
   contenido en event_banners (DB), no cargar sus bytes en el catálogo.
+- Respuesta predeterminada de /api/events: EventItem de Angular, con venue texto,
+  name/city/organizerId/maxPerOrder, price/sold, estados PUBLICADO/AGOTADO/FINALIZADO.
+  El objeto venue previo está en venueDetails. `?contract=legacy` devuelve el formato
+  anterior; endpoints v1 de favoritos/Mis Eventos conservan su respuesta previa.
+  También filtra search/available=true. Segunda imagen en .../{id}/secondary-banner.
 - GET /api/v1/eventos/mios (ORGANIZER): solo sus eventos, o [].
 - GET/POST/DELETE /api/v1/favoritos (CLIENT): lista propios publicados; POST y
   DELETE reciben {eventId}, asignación idempotente; no cambiar favoritos ajenos.
@@ -111,6 +129,21 @@ Consultar ese documento solo si se trabaja en estos flujos.
 - Una entrada = un Ticket con quantity=1, código TICK-año-16hex y snapshots
   inmutables de precio, zona, evento y fecha. GET /api/v1/tickets y .../{id}
   requieren CLIENT y solo retornan propios (ajeno 404).
+- POST /api/orders (CLIENT activo): CreateOrderPayload del frontend, con eventId,
+  items, expectedTotal/paymentMethod/paymentResult/idempotencyKey opcionales.
+  Recalcula precios de BD, comisión del 6% y redondeos en centavos; máximo 6.
+  DECLINED causa 402; precio distinto/stock insuficiente 409, sin escrituras parciales.
+  Bloquea usuario y zonas en orden estable. Misma clave/payload devuelve orden previa
+  con 200; clave reutilizada con otro payload causa 409. Primera creación 201.
+  GET /orders/me y /orders/{id} exponen compras propias; ADMIN puede consultar detalle.
+  PATCH /orders/{id} solo ADMIN, CANCELADA sobre CONFIRMADA; restaura stock una vez
+  y la validación pública rechaza tickets cancelados con 409. No hay canje de entradas.
+- Compatibilidad: /api/admin/users* alias de administración, /admin/events,
+  /admin/orders y /admin/metrics exclusivos ADMIN; /organizers/{id}/events propio
+  o ADMIN. DELETE eventos solo propietario/ADMIN y sin ventas ni órdenes históricas.
+- POST /api/v1/dynamic-price y /pricing/api/v1/dynamic-price: precio base de la zona
+  publicada desde BD. No hay reglas dinámicas Demo 4. Compose sirve la misma API en
+  puertos 8080 y 8000 porque el frontend consulta su cotización en 8000.
 - GET /api/v1/tickets/{code}/validacion y GET /validar/{code}: públicos, sin datos
   del comprador. Código inexistente 404. Cada ticket incluye validationUrl/qrValue
   estable para generar su QR en Angular. PDF e imagen visual del QR son frontend.
@@ -121,6 +154,11 @@ Demo 4 pendiente: cola/turnos/anti-scalping, habilitar compras, aprobación/rech
 edición de rechazados y correo de confirmación. El reporte del organizador
 propietario ya existía y se conserva; no se amplió con esos flujos.
 
+Límites del frontend original: useMock/useMockAuth=true, favoritos en localStorage,
+validación pública en MockStore y logout sin HTTP. Preparar backend no conecta esas
+acciones. La integración temporal solo cambia configuración de una copia aislada;
+no modificar el repositorio Angular original ni dejar esa copia al finalizar.
+
 ## Operación, pruebas y despliegue
 
 Setup y comandos completos en README. En Docker: migrate --seed es obligatorio
@@ -130,8 +168,9 @@ configuración parcial falla. El email se normaliza para poder iniciar sesión.
 
 Render ejecuta config/route/view cache, migrate --force y db:seed --force.
 Completar INITIAL_ADMIN_* en el panel privado; no inventar credenciales en fuentes.
-La Épica 1 no agregó tablas; Demo 3 requiere cuatro migraciones 2026_10_25_* y
-VenueSeeder (incluido en DatabaseSeeder). No usar migrate:fresh. La migración de
+La Épica 1 no agregó tablas; Demo 3 requiere las cuatro migraciones 2026_10_25_*,
+la compatibilidad 2026_10_28_000001 y VenueSeeder (incluido en DatabaseSeeder).
+No usar migrate:fresh. La migración de
 tickets individualiza ventas antiguas conservando ID/código original, importe y
 stock; guarda snapshots y no elimina ventas al revertir columnas.
 
@@ -147,11 +186,17 @@ SQLite :memory:; no ejecutar migraciones de tests contra la BD real. Para sesion
 con varias identidades en un test, limpiar guards y el token JWT cacheado al
 simular otra petición; el proceso de PHPUnit reutiliza el contenedor.
 
-Verificado el 2026-10-25 con PHP portátil 8.4.27 autorizado: 207 pruebas y 1040
+Verificación anterior del 2026-10-25 con PHP portátil 8.4.27 autorizado: 207 pruebas y 1040
 aserciones aprobadas en SQLite. Los bloqueos concurrentes nativos siguen sin
 verificarse en MySQL/PostgreSQL; no inferir esa cobertura de las pruebas SQLite.
 Pint y sintaxis de 48 archivos PHP aprobados; 20 rutas API verificadas.
-No se ejecutaron pruebas contra MySQL/PostgreSQL ni se desplegó esta versión.
+En aquella entrega no se ejecutaron pruebas contra MySQL/PostgreSQL ni se desplegó.
+El 2026-10-28: suite en Docker/PHP 8.4.27, 235 pruebas y 1286 aserciones aprobadas
+en SQLite; 8 flujos con servicios Angular originales contra API HTTP temporal
+aprobados. Cuatro carreras concurrentes en MySQL 8.0.46 aislado aprobadas (última
+entrada, idempotencia, multizona y cancelación), sin sobreventa ni doble restauración.
+No se probó concurrencia PostgreSQL. No se tocaron las BD habituales ni Render.
+Pint aprobado en los 38 archivos PHP modificados; 34 rutas API registradas.
 Registros de entregas: EPIC1_IMPLEMENTATION.md y DEMO3_IMPLEMENTATION.md;
 consultarlos solo para revisar el alcance y los archivos de cada entrega.
 

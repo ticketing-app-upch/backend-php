@@ -28,8 +28,8 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
 
 ## Contratos que deben preservarse
 
-- Rutas existentes `/api/auth/*` y `/api/events*`; administración únicamente en
-  `/api/v1/admin/usuarios` y `/api/v1/admin/usuarios/{id}/estado`.
+- Rutas existentes `/api/auth/*` y `/api/events*`; administración de usuarios en
+  `/api/v1/admin/usuarios*` y sus aliases `/api/admin/users*`, siempre solo ADMIN.
 - Login: credenciales incorrectas 401; cuenta inactiva con contraseña correcta
   403 y mensaje de desactivación. JWT contiene `sub` y `role`, sin datos personales.
 - HU-04: JWT_TTL en minutos, predeterminado 5. Se valida `exp` en el backend.
@@ -39,11 +39,27 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
 - Logout invalida solo el JWT presentado mediante la blacklist compartida.
 - Antes de cambiar rutas, payloads o códigos existentes, advertir el impacto en
   el frontend. Revisar README para el contrato completo.
-- Demo 3: crear eventos usa venueId, banner JPG y precios por venueZoneId. Los
-  aforos/mapas son del recinto, no del payload. Publicación directa e inmutabilidad.
+- Demo 3: contrato Angular `demo3` documentado en docs/FRONTEND_COMPATIBILITY.md.
+  POST /api/events admite EventItem JSON con imágenes JPEG Base64 y el multipart
+  anterior con venueId/banner/venueZoneId. Los aforos se validan contra el recinto.
+  JSON exige 24 horas entre eventos; multipart conserva el día calendario de Lima.
+  GET /api/events responde al frontend; `?contract=legacy` conserva el formato previo.
+  Los endpoints v1 de eventos/favoritos mantienen su formato anterior.
+  Publicación directa e inmutabilidad. Solo se eliminan eventos sin historial.
 - Compras: pago simulado, máximo 6 entre todas las zonas y un Ticket por entrada.
   Bloquear filas de zonas en orden estable y guardar snapshots inmutables.
+- /api/orders agrupa tickets, calcula comisión del 6% en centavos e idempotencia
+  persistente por usuario. Reintento idéntico 200; clave con otro payload 409.
+  Cancelación solo ADMIN: restaurar stock una vez y rechazar validación pública.
+  El endpoint anterior de compra mantiene su pago/importe sin comisión.
+- Catálogo: 15 recintos y 50 zonas en database/data/frontend-venues.json. No borrar
+  recintos históricos ni cambiar IDs/nombres de zonas que tengan ventas.
+- Cotización Demo 3: /api/v1/dynamic-price devuelve precio base de BD. También
+  /pricing/api/v1/dynamic-price; el puerto local 8000 sirve el mismo backend.
+  No implementar reglas dinámicas de Demo 4 ni confiar en precios del cliente.
 - Banners en event_banners (DB); el catálogo nunca debe cargar su contenido.
+- Registro conserva detalles opcionales del perfil en JSON con lista explícita
+  de campos; nunca persistir roles/verificationStatus enviados dentro del perfil.
 - Detalle de contratos/migraciones Demo 3: docs/DEMO3_IMPLEMENTATION.md. No agregar
   cola, anti-scalping, correos ni aprobación/edición de rechazados (Demo 4).
 
@@ -51,17 +67,30 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
 
 Entorno soportado: Docker Compose. Desde un clon nuevo:
 
+En PowerShell, crear `.env` con `Copy-Item .env.example .env` solo si aún no
+existe; en Bash usar `cp .env.example .env`. No sobrescribir claves existentes.
+Docker Desktop debe estar iniciado con contenedores Linux. Después:
+
 ```bash
-cp .env.example .env
 docker compose up -d --build
+docker compose logs --tail 50 app
 docker compose exec app php artisan key:generate
 docker compose exec app php artisan jwt:secret
+docker compose up -d --no-deps --force-recreate app
 docker compose exec app php artisan migrate --seed
 docker compose exec app php artisan test
 ```
 
-API local `localhost:8080/api`; MySQL `localhost:3307`. Los tests usan SQLite
-`:memory:`/RefreshDatabase, claves efímeras y caché array; nunca MySQL/Render.
+Generar claves solo en una instalación nueva. La recreación de `app` recarga
+APP_KEY/JWT_SECRET en `env_file`; esperar a que termine Composer antes de Artisan.
+Para entornos existentes: levantar servicios, conservar claves y ejecutar
+`php artisan migrate --seed`; README detalla actualización, logs y diagnóstico.
+
+API local `localhost:8080/api`; cotización base en `localhost:8000/api`;
+MySQL `localhost:3307` desde el host y `db:3306` dentro de Docker. La suite usa
+SQLite `:memory:`/RefreshDatabase, claves efímeras y caché array; nunca la BD
+habitual ni Render. Las verificaciones concurrentes separadas requieren una BD
+efímera aislada, como las documentadas en docs/FRONTEND_COMPATIBILITY.md.
 `vendor/` se instala desde composer.lock. No actualizar dependencias por rutina.
 Verificación excepcional con PHP portátil solo cuando el usuario la autorice;
 no convertirla en un nuevo requisito del proyecto ni versionar el runtime.

@@ -6,10 +6,13 @@ En producción, Render usa PostgreSQL mediante `DB_URL`. Para continuar con una 
 leer [AGENTS.md](AGENTS.md) y el [contexto breve del proyecto](docs/PROJECT_CONTEXT.md)
 antes de abrir únicamente los archivos del flujo solicitado.
 
-La implementación backend de **Demo 3** (HU-09 a HU-16 y HU-21) y los payloads
-actuales se detallan en [DEMO3_IMPLEMENTATION.md](docs/DEMO3_IMPLEMENTATION.md).
-Crear eventos ahora requiere recinto predefinido y banner; comprar requiere pago
-simulado y devuelve tickets individuales. Los contratos de registro/login se conservan.
+El contrato vigente para **frontend-angular, rama demo3**, está en
+[FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBILITY.md). Incluye eventos JSON,
+dos imágenes Base64, 15 recintos/50 zonas, órdenes e importes con comisión del 6%.
+La entrega anterior está registrada en [DEMO3_IMPLEMENTATION.md](docs/DEMO3_IMPLEMENTATION.md).
+El multipart y la compra anterior siguen disponibles; para obtener la respuesta
+anterior de eventos se puede usar `?contract=legacy`. Registro/login conservan
+sus rutas y aceptan los detalles opcionales de perfil enviados por Angular.
 
 ## Funciones disponibles
 
@@ -23,7 +26,7 @@ simulado y devuelve tickets individuales. Los contratos de registro/login se con
 | `GET /api/events` | Público | Lista eventos publicados y futuros |
 | `GET /api/events/{id}` | Público | Consulta un evento |
 | `POST /api/events` | `ORGANIZER` activo | Crea un evento con recinto predefinido, banner y precios por zona |
-| `GET /api/v1/recintos` | `ORGANIZER` | Lista tres recintos demostrativos con aforos y mapas |
+| `GET /api/v1/recintos` | `ORGANIZER` | Lista los 15 recintos demostrativos y sus 50 zonas |
 | `GET /api/v1/eventos/mios` | `ORGANIZER` | Lista solo sus propios eventos |
 | `PUT/PATCH /api/events/{id}` | `ORGANIZER` | Rechaza edición con 403 en Demo 3 |
 | `GET /api/events/{id}/banner` | Público | Entrega el banner JPEG de un evento publicado |
@@ -34,52 +37,160 @@ simulado y devuelve tickets individuales. Los contratos de registro/login se con
 | `GET /api/v1/tickets/{code}/validacion` | Público | Confirmación de compra sin datos del comprador |
 | `GET /validar/{code}` | Público | Alias JSON para la URL del QR sin frontend configurado |
 | `GET /api/events/{id}/sales-report` | Organizador propietario | Consulta ventas del evento |
+| `GET /api/events/{id}/secondary-banner` | Público | Entrega la segunda imagen JPEG |
+| `GET /api/organizers/{organizerId}/events` | Organizador propietario o `ADMIN` | Lista eventos del organizador |
+| `DELETE /api/events/{id}` | Organizador propietario o `ADMIN` | Elimina solo eventos sin ventas ni órdenes |
+| `POST /api/orders` | `CLIENT` activo | Compra con comisión del 6%, tickets individuales e idempotencia |
+| `GET /api/orders/me` | `CLIENT` | Lista compras propias |
+| `GET /api/orders/{id}` | Cliente propietario o `ADMIN` | Detalle de una compra |
+| `PATCH /api/orders/{id}` | `ADMIN` | Cancela una compra confirmada y restaura stock una sola vez |
+| `GET /api/admin/users` | `ADMIN` | Alias del listado de asistentes/organizadores |
+| `PATCH /api/admin/users/{id}` | `ADMIN` | Alias del cambio de estado de usuario |
+| `GET /api/admin/events` | `ADMIN` | Lista eventos de cualquier organizador/estado |
+| `GET /api/admin/orders` | `ADMIN` | Lista compras de la plataforma |
+| `GET /api/admin/metrics` | `ADMIN` | Totales de usuarios, eventos, órdenes y ventas confirmadas |
+| `POST /api/v1/dynamic-price` | Público | Precio base autoritativo de una zona, sin reglas dinámicas |
+| `POST /pricing/api/v1/dynamic-price` | Público | Alias de cotización para el prefijo de producción del frontend |
 
 El registro público de `ADMIN` está bloqueado. El guard `api` usa JWT; la contraseña se almacena con hash y el token incluye el rol.
 
 ## Instalación
 
-Docker y Docker Compose deben estar instalados. Desde `backend-php`:
+### Requisitos
 
-```bash
-cp .env.example .env
-docker compose up -d --build
-docker compose exec app php artisan key:generate
-docker compose exec app php artisan jwt:secret
-docker compose exec app php artisan migrate --seed
+- Docker Desktop iniciado con contenedores Linux y Docker Compose v2.
+- Terminal situada dentro de `backend-php`.
+- Puertos locales `8080`, `8000` y `3307` disponibles.
+
+PHP, Composer y MySQL se ejecutan en Docker; no hace falta instalarlos en el host.
+El primer build necesita conexión para descargar las imágenes y las dependencias
+de `composer.lock`.
+
+### Primer arranque desde un clon nuevo
+
+Crear `.env` si todavía no existe. En PowerShell:
+
+```powershell
+if (-not (Test-Path -LiteralPath .env)) {
+    Copy-Item -LiteralPath .env.example -Destination .env
+}
 ```
 
-En el primer arranque, espera a que termine la instalación de dependencias antes de ejecutar los comandos de Artisan. Puedes consultar su progreso con `docker compose logs --tail 50 app`. Si Artisan muestra que falta `vendor/autoload.php`, revisa esos logs; si la instalación ya terminó o falló y el archivo sigue ausente, ejecuta:
+En Bash, solo si `.env` no existe, usar `cp .env.example .env`. Conservar las
+claves de cualquier entorno que ya esté configurado.
+
+Opcionalmente, completar `INITIAL_ADMIN_NAME`, `INITIAL_ADMIN_EMAIL` e
+`INITIAL_ADMIN_PASSWORD` en el `.env` privado antes de levantar los contenedores.
+La contraseña requiere al menos ocho caracteres, una mayúscula, un número y un
+carácter especial. Los tres valores vacíos omiten el administrador; una
+configuración parcial hace fallar el seeder. No versionar esos datos.
+
+Construir y levantar el backend y MySQL:
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail 50 app
+```
+
+Esperar a que termine la instalación de dependencias y el servidor esté listo.
+La carpeta local se monta sobre `/var/www/html`; si falta `vendor/autoload.php`,
+el arranque instala las dependencias en esa carpeta. Si la instalación falla,
+revisar los logs y volver a ejecutarla:
 
 ```bash
 docker compose exec app composer install --no-interaction --prefer-dist
 ```
 
-Cuando termine correctamente, repite los comandos de generación de claves y migración pendientes. La carpeta local se monta sobre `/var/www/html`, por lo que el contenedor necesita que `vendor/` esté disponible en esa carpeta; el `Dockerfile` intenta instalar las dependencias automáticamente al arrancar si falta el autoload.
-
-`APP_KEY` y `JWT_SECRET` se generan localmente; no deben compartirse ni versionarse. `migrate --seed` crea los roles `ADMIN`, `ORGANIZER` y `CLIENT`, necesarios para el registro. Para crear también la cuenta administradora inicial, completa `INITIAL_ADMIN_NAME`, `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` en `.env` **antes de levantar los contenedores**. La contraseña debe tener al menos ocho caracteres, una mayúscula, un número y un carácter especial. Si los tres valores están vacíos, se omite la cuenta administradora; si falta solo alguno, el seeder falla. Si los completas con los contenedores ya levantados, ejecuta `docker compose up -d --force-recreate app` y luego `docker compose exec app php artisan db:seed`, para que Docker cargue las nuevas variables. Repetir el seeder no duplica el usuario ni cambia su contraseña; un correo ya asignado a otro rol produce un error. En arranques posteriores basta con `docker compose up -d`.
-
-La API queda en `http://localhost:8080/api`. MySQL se publica en el puerto `3307` del host. Para comprobar que Laravel está activo:
+En el primer arranque, con `APP_KEY` y `JWT_SECRET` todavía vacíos, generarlos:
 
 ```bash
-curl http://localhost:8080/up
+docker compose exec app php artisan key:generate
+docker compose exec app php artisan jwt:secret
 ```
 
-El cliente HTTP debe usar `http://localhost:8080/api` como URL base. El backend usa la configuración CORS predeterminada de Laravel.
+Las claves se escriben en `.env`. Como Compose carga ese archivo mediante
+`env_file`, recrear solamente el contenedor de la aplicación para que también
+reciba los nuevos valores en su entorno; después aplicar migraciones y seeders:
+
+```bash
+docker compose up -d --no-deps --force-recreate app
+docker compose exec app php artisan migrate --seed
+```
+
+`APP_KEY` y `JWT_SECRET` son privados y permanecen en el `.env` ignorado por Git.
+
+`migrate --seed` crea los roles, carga los 15 recintos y 50 zonas, y crea el
+administrador si se configuró. Repetir el seeder conserva sus credenciales e IDs;
+un correo asignado a otro rol produce un error.
+
+### Comprobar el servicio y sus puertos
+
+| Uso | Dirección desde el host |
+|---|---|
+| Salud de Laravel | `http://localhost:8080/up` |
+| API principal | `http://localhost:8080/api` |
+| Cotización base compatible con Demo 3 | `http://localhost:8000/api/v1/dynamic-price` |
+| MySQL para un cliente de escritorio | `localhost:3307` |
+
+Los puertos `8080` y `8000` sirven la misma aplicación PHP; no se necesita el
+microservicio Python para la cotización base de Demo 3. Dentro del contenedor,
+MySQL usa `DB_HOST=db` y `DB_PORT=3306`, como indica `.env.example`.
+
+Comprobar salud y catálogo desde PowerShell:
+
+```powershell
+curl.exe -f http://localhost:8080/up
+Invoke-RestMethod -Uri http://localhost:8080/api/events
+```
+
+En Bash puede usarse `curl -f http://localhost:8080/up`. El catálogo devuelve
+`[]` hasta que se publiquen eventos futuros. El cliente HTTP utiliza
+`http://localhost:8080/api` como base; CORS conserva la configuración de Laravel.
+
+### Arranques posteriores y actualización de una base existente
+
+Para iniciar un entorno ya configurado basta con `docker compose up -d`. Después
+de actualizar el código del backend, ejecutar:
+
+```bash
+docker compose up -d --build
+docker compose exec app php artisan optimize:clear
+docker compose exec app php artisan migrate --seed
+```
+
+Mantener las claves existentes. Si se cambian variables privadas de `.env`,
+recrear `app` con `docker compose up -d --no-deps --force-recreate app`. Si se
+agregan los datos del administrador después del primer arranque, ejecutar luego
+`docker compose exec app php artisan db:seed`.
+
+Para detener los servicios conservando los datos de MySQL:
+
+```bash
+docker compose down
+```
+
+El volumen `mysql_data` conserva la base entre arranques. Esta entrega actualiza
+el esquema mediante migraciones aditivas; no requiere reconstruir la base.
 
 ## Registro
 
 `POST /api/auth/register` requiere `fullName`, `email`, `password`, `role`, `acceptedTerms` y el documento del perfil correspondiente. `role` solo admite `CLIENT` u `ORGANIZER`. `acceptedTerms` debe llegar como el booleano JSON `true` (HU-06); si falta, es falso o tiene otro tipo (por ejemplo, `"true"`, `"yes"`, `"on"` o `1`), el registro se rechaza con `422` y no se crea ningún registro.
 
-### Comparación de campos: antes y ahora
+### Campos requeridos y opcionales
 
-| Parte del registro | Antes | Ahora |
+| Parte del registro | Requeridos | Opcionales compatibles con Angular |
 |---|---|---|
-| Ambos roles | `fullName`, `email`, `password`, `role`, `acceptedTerms` obligatorio y `marketingOptIn` opcional | `fullName`, `email`, `password`, `role` y `acceptedTerms` obligatorio (se guarda la fecha de aceptación en `users.terms_accepted_at`). Ya no se solicita ni guarda `marketingOptIn` |
-| Usuario (`CLIENT`) | `profile.country`, `city`, `district`, `hasPeruvianNationality`, `docType`, `docNumber`, `gender`, `phoneCode` y `phone`; se admitían DNI, CE y pasaporte | Solo `profile.docNumber`: DNI de 8 dígitos |
-| Organizador (`ORGANIZER`) | `organizer.orgType`, `displayName`, `taxId`, `legalName`, `repName`, `phone`, `country`, `city` y `website`; según el tipo se admitía RUC o DNI | Solo `organizer.taxId`: RUC de 11 dígitos |
+| Ambos roles | `fullName`, `email`, `password`, `role` y `acceptedTerms=true` | `marketingOptIn` booleano |
+| Usuario (`CLIENT`) | `profile.docNumber`: DNI de 8 dígitos | `profile.docType=DNI`, `country`, `city`, `district`, `hasPeruvianNationality`, `gender`, `phoneCode` y `phone` |
+| Organizador (`ORGANIZER`) | `organizer.taxId`: RUC de 11 dígitos | `organizer.orgType`, `displayName`, `legalName`, `repName`, `phone`, `country`, `city` y `website` |
 
-Para quien se registra, los datos son **nombre, correo, contraseña y DNI** si es usuario, o **nombre, correo, contraseña y RUC** si es organizador. El cliente HTTP envía además `role` para que el backend sepa qué perfil crear. Los perfiles conservan solo su documento, `user_id`, clave primaria y marcas de tiempo; `users` conserva también `role_id` y `active` para la autenticación, y `terms_accepted_at` como evidencia de la aceptación de Términos y Condiciones.
+El registro mínimo sigue siendo **nombre, correo, contraseña y DNI** si es
+cliente, o **nombre, correo, contraseña y RUC** si es organizador, además del rol
+y la aceptación de términos. Los detalles opcionales reconocidos se conservan en
+`client_profiles.details` u `organizer_profiles.details` y se devuelven en el
+perfil de registro/login. `marketingOptIn` se guarda si se proporciona.
+La aceptación de términos queda registrada en `users.terms_accepted_at`.
 
 Cliente (`CLIENT`):
 
@@ -109,7 +220,10 @@ Organizador (`ORGANIZER`):
 
 El DNI debe ser una **cadena de 8 dígitos** y el RUC una **cadena de 11 dígitos** que comience por `10`, `15`, `17` o `20`. Enviarlos como cadenas conserva los ceros iniciales. El backend comprueba el formato del RUC, pero no consulta SUNAT. La contraseña requiere al menos 8 caracteres, una mayúscula, un número y un carácter especial.
 
-`profile.docType` todavía se acepta por compatibilidad si vale `DNI`, pero no se almacena ni se devuelve. Otros campos del registro anterior se ignoran. No se aceptan CE, pasaporte ni DNI como documento de organizador.
+`profile.docType` admite `DNI` y se conserva si se proporciona. No se aceptan CE,
+pasaporte ni DNI como documento de organizador. Los campos no reconocidos no se
+persisten; en particular, `role_id`, `active` y `verificationStatus` enviados por
+el cliente no permiten cambiar privilegios ni el estado de la cuenta.
 
 El usuario y su perfil se crean en una transacción. La respuesta `201` contiene un JWT y los datos del usuario, por ejemplo:
 
@@ -267,10 +381,11 @@ Para verificar BUG-004 / TC-EXP-002, utiliza `GET /api/events/{id}/sales-report`
 
 | Método y ruta | Éxito | Errores previstos |
 |---|---|---|
-| `GET /api/events` | `200`: publicados futuros con zonas, recinto/mapa, bannerUrl, shareUrl e isFavorite; `[]` si no hay coincidencias | `422` si los filtros son inválidos. Admite category, venue y date (`YYYY-MM-DD`, día calendario de Lima) |
+| `GET /api/events` | `200`: EventItem compatible con Angular, zonas, imágenes y campos de apoyo; `[]` si no hay coincidencias | `422` si los filtros son inválidos. Admite search, category, available, venue y date (`YYYY-MM-DD`, día calendario de Lima) |
 | `GET /api/events/{id}` | `200`: datos de un evento publicado y sus zonas | `404`: `{"message":"Evento no disponible"}` si no existe o no está publicado |
-| `POST /api/events` | `201`: evento publicado, banner y zonas heredadas del recinto | `401` sin JWT; `403` por rol/cuenta inactiva; `422` por campos, banner, fechas o precios inválidos; `409` por otro evento en el mismo recinto y día de Lima |
+| `POST /api/events` | `201`: evento publicado; admite JSON con dos imágenes Base64 o multipart anterior | `401` sin JWT; `403` por rol/cuenta inactiva; `422` por datos/imágenes inválidos; `409` por separación menor de 24 horas en JSON o mismo día de Lima en multipart |
 | `POST /api/events/{id}/tickets` | `201`: paymentStatus, quantity, totalPrice y array tickets; un ticket por entrada | `401` sin JWT; `403` por rol/cuenta inactiva; `404` evento no disponible; `422` por pago/zona inválidos o total superior a 6; `409` por aforo insuficiente |
+| `POST /api/orders` | `201`: orden con líneas, tickets, subtotal, comisión del 6% y total; `200` en reintento idéntico | `402` pago simulado rechazado; `409` precio/stock/clave incompatibles; `422` formato, zonas o cantidades inválidos; `401/403` por autenticación/permisos |
 | `GET /api/events/{id}/sales-report` | `200`: devuelve `event`, `summary` y `zones`; los totales de ventas e ingresos son cero si no hubo ventas | `401` sin token válido; `403` si no es organizador o no es dueño del evento; `404` si el evento no existe |
 
 En la compra, el error `409` devuelve `{"message":"Aforo insuficiente para la cantidad solicitada"}`. Consultar el reporte de un evento ajeno devuelve `403` con `{"message":"No tienes permiso para consultar este reporte."}`. Una compra rechazada no descuenta cupos ni crea entradas parcialmente.
@@ -285,19 +400,26 @@ Las migraciones de creación (`0001_01_01_000003` a `000005`) crean las tablas d
 
 | Tabla | Columnas de negocio |
 |---|---|
-| `users` | `full_name`, `email`, `password`, `role_id`, `active`, `terms_accepted_at` |
-| `client_profiles` | `user_id`, `doc_number` (DNI) |
-| `organizer_profiles` | `user_id`, `tax_id` (RUC) |
+| `users` | `full_name`, `email`, `password`, `role_id`, `active`, `terms_accepted_at`, `marketing_opt_in` opcional |
+| `client_profiles` | `user_id`, `doc_number` (DNI), `details` JSON opcional |
+| `organizer_profiles` | `user_id`, `tax_id` (RUC), `details` JSON opcional |
 
-Las tablas también incluyen sus claves primarias y marcas de tiempo. `role_id` y `user_id` son claves foráneas; `users.email`, `client_profiles.doc_number` y `organizer_profiles.tax_id` tienen índices únicos. Una instalación nueva solo necesita `php artisan migrate --seed`: no hay migraciones posteriores que creen y luego eliminen columnas del registro.
+Las tablas también incluyen sus claves primarias y marcas de tiempo. `role_id`
+y `user_id` son claves foráneas; `users.email`, `client_profiles.doc_number` y
+`organizer_profiles.tax_id` tienen índices únicos. La migración
+`2026_10_28_000001_add_frontend_contract_support` agrega los perfiles opcionales,
+datos de eventos/recintos, segunda imagen y `ticket_orders`, que agrupa tickets
+con snapshots, importes, estado y clave de idempotencia por usuario.
 
 `2026_10_01_000000_add_terms_accepted_at_to_users_table` agrega `users.terms_accepted_at` (nullable: el administrador sembrado no pasa por el registro público). En una base existente, con los contenedores levantados, basta con aplicar las migraciones pendientes; no requiere `migrate:fresh` ni borra datos:
 
 ```bash
-docker compose exec app php artisan migrate
+docker compose exec app php artisan migrate --seed
 ```
 
-**Base existente con el esquema anterior:** Laravel no repite una migración ya ejecutada aunque cambie su archivo. Para reconstruir esas tablas desde las migraciones actuales se necesita `php artisan migrate:fresh --seed`, que **borra todas las tablas y sus datos**; hazlo solo si puedes regenerarlos. La base usada durante este desarrollo ya tiene el esquema final, por lo que no necesita reconstruirse.
+Laravel registra las migraciones aplicadas y ejecuta las pendientes. Esta
+actualización conserva usuarios, tickets históricos y stock; el seeder carga el
+catálogo nuevo sin borrar los recintos anteriores que puedan tener historial.
 
 ## Pruebas
 
@@ -323,6 +445,11 @@ docker compose exec app php artisan test
 | `tests/Feature/PurchaseTicketTest.php` | Pago simulado, máximo 6, varias zonas, aforo, rollback y tickets individuales |
 | `tests/Feature/TicketReadTest.php` | Propiedad de entradas, snapshots inmutables y confirmación pública sin datos personales |
 | `tests/Feature/DemoThreeMigrationTest.php` | Migraciones reversibles e individualización de ventas antiguas conservando códigos/importes/stock |
+| `tests/Feature/FrontendCompatibilityTest.php` | JSON/imágenes, catálogos, filtros, órdenes, comisión, idempotencia, permisos, cancelación, rollback e importación histórica |
+
+Última verificación del backend: **235 pruebas y 1286 aserciones aprobadas**.
+La comprobación aislada con servicios Angular y las carreras concurrentes en
+MySQL están registradas en [FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBILITY.md).
 
 ## Despliegue en Render
 
@@ -337,7 +464,8 @@ y una configuración parcial detiene el seeding. No poner credenciales en Git.
 El servicio existente es `https://alpateck-backend.onrender.com`; su salud se
 consulta en `/up`. Las modificaciones locales requieren publicación y despliegue
 autorizados antes de estar disponibles allí. Demo 3 requiere las cuatro migraciones
-aditivas `2026_10_25_*` y `VenueSeeder` (incluido en DatabaseSeeder); no reconstruir
+aditivas `2026_10_25_*`, la compatibilidad `2026_10_28_000001` y `VenueSeeder`
+(incluido en DatabaseSeeder); no reconstruir
 ni borrar la base. El arranque existente ya ejecuta migrate y db:seed.
 Configurar APP_URL con el dominio público del backend y FRONTEND_URL con el de
 Angular cuando se integre: se usan para bannerUrl, shareUrl y validationUrl.

@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'starts_at',
     'ends_at',
     'status',
+    'city', 'image_url', 'published_at', 'max_per_order',
 ])]
 class Event extends Model
 {
@@ -30,6 +31,8 @@ class Event extends Model
             'venue_capacity' => 'integer',
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'published_at' => 'datetime',
+            'max_per_order' => 'integer',
         ];
     }
 

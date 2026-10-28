@@ -5,11 +5,30 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Admin\IndexUserRequest;
 use App\Http\Requests\Admin\UpdateUserStatusRequest;
 use App\Http\Resources\AdminUserResource;
+use App\Models\Event;
+use App\Models\EventZone;
+use App\Models\TicketOrder;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 
 class AdminUserController extends Controller
 {
+    public function metrics(): JsonResponse
+    {
+        return response()->json([
+            'users' => ['total' => User::count(),
+                'clients' => User::whereHas('role', fn ($roles) => $roles->where('name', 'CLIENT'))->count(),
+                'organizers' => User::whereHas('role', fn ($roles) => $roles->where('name', 'ORGANIZER'))->count(),
+                'admins' => User::whereHas('role', fn ($roles) => $roles->where('name', 'ADMIN'))->count()],
+            'events' => ['total' => Event::count(), 'published' => Event::where('status', 'PUBLISHED')->count(),
+                'drafts' => Event::where('status', 'DRAFT')->count()],
+            'orders' => ['total' => TicketOrder::count(), 'confirmed' => TicketOrder::where('status', 'CONFIRMADA')->count(),
+                'cancelled' => TicketOrder::where('status', 'CANCELADA')->count()],
+            'ticketsSold' => (int) (EventZone::sum('capacity') - EventZone::sum('available_capacity')),
+            'grossRevenue' => (float) TicketOrder::where('status', 'CONFIRMADA')->sum('total'),
+        ]);
+    }
+
     public function index(IndexUserRequest $request): JsonResponse
     {
         $filters = $request->validated();

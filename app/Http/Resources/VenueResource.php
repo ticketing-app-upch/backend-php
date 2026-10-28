@@ -11,6 +11,7 @@ class VenueResource extends JsonResource
     {
         return [
             'id' => (string) $this->id, 'name' => $this->name,
+            'slug' => $this->slug, 'city' => $this->city, 'mapImage' => $this->map_image,
             'address' => $this->address, 'capacity' => $this->capacity,
             'map' => ['viewBox' => '0 0 1000 620',
                 'stage' => ['x' => 300, 'y' => 30, 'width' => 400, 'height' => 70, 'label' => 'Escenario']],
