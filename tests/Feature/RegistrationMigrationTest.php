@@ -17,15 +17,15 @@ class RegistrationMigrationTest extends TestCase
     public function test_fresh_migrations_create_only_current_registration_columns_and_constraints(): void
     {
         $this->assertEqualsCanonicalizing(
-            ['id', 'full_name', 'email', 'password', 'role_id', 'active', 'terms_accepted_at', 'created_at', 'updated_at'],
+            ['id', 'full_name', 'email', 'password', 'role_id', 'active', 'terms_accepted_at', 'marketing_opt_in', 'created_at', 'updated_at'],
             Schema::getColumnListing('users'),
         );
         $this->assertEqualsCanonicalizing(
-            ['id', 'user_id', 'doc_number', 'created_at', 'updated_at'],
+            ['id', 'user_id', 'doc_number', 'details', 'created_at', 'updated_at'],
             Schema::getColumnListing('client_profiles'),
         );
         $this->assertEqualsCanonicalizing(
-            ['id', 'user_id', 'tax_id', 'created_at', 'updated_at'],
+            ['id', 'user_id', 'tax_id', 'details', 'created_at', 'updated_at'],
             Schema::getColumnListing('organizer_profiles'),
         );
 

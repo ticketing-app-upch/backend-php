@@ -12,22 +12,30 @@ class TicketResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $validationUrl = rtrim(config('ticketing.frontend_url') ?: config('app.url'), '/').'/validar/'.rawurlencode($this->code);
+
         return [
             'id' => (string) $this->id,
             'code' => $this->code,
             'quantity' => $this->quantity,
             'totalPrice' => (float) $this->total_price,
+            'serviceFee' => (float) $this->service_fee,
+            'status' => $this->resource->relationLoaded('order') ? ($this->order?->status ?? 'CONFIRMADA') : 'CONFIRMADA',
+            'unitPrice' => (float) ($this->unit_price ?? $this->total_price / max(1, $this->quantity)),
+            'validationUrl' => $validationUrl,
+            'qrValue' => $validationUrl,
             'createdAt' => $this->created_at->toIso8601String(),
             'event' => [
                 'id' => (string) $this->eventZone->event->id,
-                'title' => $this->eventZone->event->title,
-                'venueName' => $this->eventZone->event->venue_name,
-                'startsAt' => $this->eventZone->event->starts_at->toIso8601String(),
+                'title' => $this->event_title ?? $this->eventZone->event->title,
+                'venueName' => $this->venue_name ?? $this->eventZone->event->venue_name,
+                'venueAddress' => $this->venue_address ?? $this->eventZone->event->venue_address,
+                'startsAt' => ($this->event_starts_at ?? $this->eventZone->event->starts_at)->toIso8601String(),
             ],
             'zone' => [
                 'id' => (string) $this->eventZone->id,
-                'name' => $this->eventZone->name,
-                'basePrice' => (float) $this->eventZone->base_price,
+                'name' => $this->zone_name ?? $this->eventZone->name,
+                'basePrice' => (float) ($this->unit_price ?? $this->total_price / max(1, $this->quantity)),
             ],
         ];
     }

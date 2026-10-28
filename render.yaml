@@ -23,8 +23,16 @@ services:
         generateValue: true
       - key: JWT_ALGO
         value: HS256
+      - key: JWT_TTL
+        value: "5"
       - key: JWT_SECRET
         sync: false # Generar con: php artisan jwt:secret --show
+      - key: INITIAL_ADMIN_NAME
+        sync: false
+      - key: INITIAL_ADMIN_EMAIL
+        sync: false
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false # Completar los tres valores; nunca versionar credenciales.
       - key: DB_CONNECTION
         value: pgsql
       - key: DB_URL

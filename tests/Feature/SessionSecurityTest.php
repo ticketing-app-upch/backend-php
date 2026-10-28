@@ -69,7 +69,7 @@ class SessionSecurityTest extends TestCase
         return $response->json('token');
     }
 
-    public function test_deactivating_an_authenticated_user_blocks_the_existing_token(): void
+    public function test_deactivation_preserves_the_existing_session_until_token_expiration(): void
     {
         $organizer = $this->organizer();
         $event = $this->eventFor($organizer);
@@ -81,6 +81,11 @@ class SessionSecurityTest extends TestCase
 
         $organizer->update(['active' => false]);
         $this->assertFalse($organizer->fresh()->active);
+        $this->app['auth']->forgetGuards();
+
+        $this->get($url, $headers)->assertOk();
+
+        $this->travel(config('jwt.ttl') + 1)->minutes();
         $this->app['auth']->forgetGuards();
 
         $this->get($url, $headers)
@@ -99,43 +104,55 @@ class SessionSecurityTest extends TestCase
     }
 
     #[DataProvider('roles')]
-    public function test_inactive_users_are_rejected_without_role_middleware(string $role): void
+    public function test_deactivated_users_keep_previously_issued_tokens_for_all_roles(string $role): void
     {
         $user = User::factory()->create([
             'role_id' => Role::where('name', $role)->value('id'),
-            'active' => false,
+            'active' => true,
         ]);
         $token = (string) JWTAuth::fromUser($user);
+        $user->update(['active' => false]);
 
         $this->get('/api/_test/session', ['Authorization' => "Bearer {$token}"])
-            ->assertUnauthorized()
-            ->assertExactJson(['message' => 'Unauthenticated.']);
+            ->assertOk()
+            ->assertExactJson(['ok' => true]);
     }
 
-    public function test_login_issues_a_token_valid_for_eight_hours(): void
+    public static function tokenDurations(): array
     {
+        return [
+            'one minute' => [1],
+            'five minutes' => [5],
+            'fifteen minutes' => [15],
+        ];
+    }
+
+    #[DataProvider('tokenDurations')]
+    public function test_token_duration_is_configurable_in_minutes(int $minutes): void
+    {
+        config(['jwt.ttl' => $minutes]);
         $token = $this->loginToken($this->organizer());
         $claims = JWTAuth::setToken($token)->getPayload();
 
-        $this->assertSame(8 * 60 * 60, $claims->get('exp') - $claims->get('iat'));
+        $this->assertSame($minutes * 60, $claims->get('exp') - $claims->get('iat'));
     }
 
     public static function expirationBoundaries(): array
     {
         return [
-            'one second before eight hours' => [8 * 60 * 60 - 1, 200],
-            'one second after eight hours' => [8 * 60 * 60 + 1, 401],
+            'one second before expiration' => [-1, 200],
+            'one second after expiration' => [1, 401],
         ];
     }
 
     #[DataProvider('expirationBoundaries')]
-    public function test_eight_hour_expiration_on_a_real_protected_route(int $seconds, int $status): void
+    public function test_expiration_on_a_real_protected_route(int $offsetSeconds, int $status): void
     {
         $organizer = $this->organizer();
         $event = $this->eventFor($organizer);
         $token = $this->loginToken($organizer);
 
-        $this->travel($seconds)->seconds();
+        $this->travel(config('jwt.ttl') * 60 + $offsetSeconds)->seconds();
 
         $response = $this->get("/api/events/{$event->id}/sales-report", [
             'Authorization' => "Bearer {$token}",
@@ -149,7 +166,7 @@ class SessionSecurityTest extends TestCase
     public function test_public_event_catalog_remains_accessible_with_an_expired_token(): void
     {
         $token = $this->loginToken($this->organizer());
-        $this->travel(8 * 60 * 60 + 1)->seconds();
+        $this->travel(config('jwt.ttl') + 1)->minutes();
 
         $this->get('/api/events', ['Authorization' => "Bearer {$token}"])
             ->assertOk();

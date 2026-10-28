@@ -20,6 +20,8 @@ class AdminUserSeeder extends Seeder
             return;
         }
 
+        $email = is_string($email) ? strtolower(trim($email)) : $email;
+
         Validator::make(compact('name', 'email', 'password'), [
             'name' => ['required', 'string', 'min:2', 'max:255'],
             'email' => ['required', 'email', 'max:255'],
