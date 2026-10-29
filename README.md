@@ -12,13 +12,13 @@ dos imágenes Base64, 15 recintos/50 zonas, órdenes e importes con comisión de
 La entrega anterior está registrada en [DEMO3_IMPLEMENTATION.md](docs/DEMO3_IMPLEMENTATION.md).
 El multipart y la compra anterior siguen disponibles; para obtener la respuesta
 anterior de eventos se puede usar `?contract=legacy`. Registro/login conservan
-sus rutas y aceptan los detalles opcionales de perfil enviados por Angular.
+sus rutas y usan únicamente los campos de registro confirmados por el usuario.
 
 ## Funciones disponibles
 
 | Método y ruta | Acceso | Función |
 |---|---|---|
-| `POST /api/auth/register` | Público | Registra un cliente con DNI o un organizador con RUC |
+| `POST /api/auth/register` | Público | Registra un cliente con DNI o un organizador con empresa y RUC |
 | `POST /api/auth/login` | Público | Inicia sesión con correo y contraseña |
 | `POST /api/auth/logout` | Cualquier rol autenticado | Invalida el JWT presentado |
 | `GET /api/v1/admin/usuarios` | `ADMIN` | Lista asistentes/organizadores y filtra por rol y estado |
@@ -175,22 +175,23 @@ el esquema mediante migraciones aditivas; no requiere reconstruir la base.
 
 ## Registro
 
-`POST /api/auth/register` requiere `fullName`, `email`, `password`, `role`, `acceptedTerms` y el documento del perfil correspondiente. `role` solo admite `CLIENT` u `ORGANIZER`. `acceptedTerms` debe llegar como el booleano JSON `true` (HU-06); si falta, es falso o tiene otro tipo (por ejemplo, `"true"`, `"yes"`, `"on"` o `1`), el registro se rechaza con `422` y no se crea ningún registro.
+`POST /api/auth/register` requiere `fullName`, `email`, `password`, `role`, `acceptedTerms` y los campos del perfil correspondiente indicados abajo. `role` solo admite `CLIENT` u `ORGANIZER`. `acceptedTerms` debe llegar como el booleano JSON `true` (HU-06); si falta, es falso o tiene otro tipo (por ejemplo, `"true"`, `"yes"`, `"on"` o `1`), el registro se rechaza con `422` y no se crea ningún registro.
 
-### Campos requeridos y opcionales
+### Campos aceptados
 
-| Parte del registro | Requeridos | Opcionales compatibles con Angular |
-|---|---|---|
-| Ambos roles | `fullName`, `email`, `password`, `role` y `acceptedTerms=true` | `marketingOptIn` booleano |
-| Usuario (`CLIENT`) | `profile.docNumber`: DNI de 8 dígitos | `profile.docType=DNI`, `country`, `city`, `district`, `hasPeruvianNationality`, `gender`, `phoneCode` y `phone` |
-| Organizador (`ORGANIZER`) | `organizer.taxId`: RUC de 11 dígitos | `organizer.orgType`, `displayName`, `legalName`, `repName`, `phone`, `country`, `city` y `website` |
+| Parte del registro | Requeridos |
+|---|---|
+| Ambos roles | `fullName`, `email`, `password`, `role` y `acceptedTerms=true` |
+| Asistente (`CLIENT`) | `profile.docNumber`: DNI de 8 dígitos |
+| Organizador (`ORGANIZER`) | `organizer.displayName`: nombre de la empresa (2–255 caracteres); `organizer.taxId`: RUC de 11 dígitos |
 
-El registro mínimo sigue siendo **nombre, correo, contraseña y DNI** si es
-cliente, o **nombre, correo, contraseña y RUC** si es organizador, además del rol
-y la aceptación de términos. Los detalles opcionales reconocidos se conservan en
-`client_profiles.details` u `organizer_profiles.details` y se devuelven en el
-perfil de registro/login. `marketingOptIn` se guarda si se proporciona.
-La aceptación de términos queda registrada en `users.terms_accepted_at`.
+Estos son los campos confirmados por el usuario mediante las capturas del
+2026-10-29, junto con la aceptación obligatoria de términos ya acordada.
+Los campos adicionales se ignoran: teléfono/prefijo, país, ciudad, género,
+docType, marketingOptIn y otros detalles no se guardan ni se devuelven en
+registro/login. El nombre de empresa usa `organizer_profiles.details.displayName`.
+La aceptación de términos queda registrada en `users.terms_accepted_at`. No se
+eliminan columnas ni datos históricos; tampoco se devuelven esos detalles extra.
 
 Cliente (`CLIENT`):
 
@@ -214,14 +215,15 @@ Organizador (`ORGANIZER`):
   "password": "Secret123!",
   "role": "ORGANIZER",
   "acceptedTerms": true,
-  "organizer": { "taxId": "20123456789" }
+  "organizer": { "displayName": "Eventos SAC", "taxId": "20123456789" }
 }
 ```
 
 El DNI debe ser una **cadena de 8 dígitos** y el RUC una **cadena de 11 dígitos** que comience por `10`, `15`, `17` o `20`. Enviarlos como cadenas conserva los ceros iniciales. El backend comprueba el formato del RUC, pero no consulta SUNAT. La contraseña requiere al menos 8 caracteres, una mayúscula, un número y un carácter especial.
 
-`profile.docType` admite `DNI` y se conserva si se proporciona. No se aceptan CE,
-pasaporte ni DNI como documento de organizador. Los campos no reconocidos no se
+El documento del asistente siempre es un DNI; docType no forma parte del contrato.
+No se aceptan números de CE, pasaporte ni DNI como RUC de organizador.
+Los campos no reconocidos no se
 persisten; en particular, `role_id`, `active` y `verificationStatus` enviados por
 el cliente no permiten cambiar privilegios ni el estado de la cuenta.
 
@@ -240,19 +242,25 @@ El usuario y su perfil se crean en una transacción. La respuesta `201` contiene
 }
 ```
 
-El perfil del organizador aparece en `user.organizer.taxId`. La respuesta no incluye contraseña ni columnas internas. Los conflictos por correo, DNI o RUC duplicados devuelven `409`; los datos requeridos o formatos inválidos devuelven `422`. Los tres valores tienen índices únicos en MySQL.
+El perfil del organizador aparece en `user.organizer.displayName` y
+`user.organizer.taxId`. Las cuentas antiguas sin nombre de empresa pueden iniciar
+sesión; en ese caso displayName es null. La respuesta no incluye contraseña ni
+columnas internas. Los conflictos por correo, DNI o RUC duplicados devuelven `409`;
+los datos requeridos o formatos inválidos devuelven `422`. Los tres valores tienen
+índices únicos en MySQL.
 
 ### Casos de éxito y error del registro
 
 | Caso | HTTP | Resultado |
 |---|---|---|
 | Cliente con campos válidos, DNI disponible y T&C aceptados | `201` | Crea usuario y perfil; devuelve `token` y `user.profile.docNumber` |
-| Organizador con campos válidos, RUC disponible y T&C aceptados | `201` | Crea usuario y perfil; devuelve `token` y `user.organizer.taxId` |
+| Organizador con empresa válida, RUC disponible y T&C aceptados | `201` | Crea usuario y perfil; devuelve `token`, `user.organizer.displayName` y `user.organizer.taxId` |
 | Correo ya registrado, incluso con distintas mayúsculas | `409` | `{"message":"El correo ya está registrado."}` |
 | DNI ya registrado | `409` | `{"message":"Ese documento ya está registrado."}` |
 | RUC ya registrado | `409` | `{"message":"Ese RUC ya está registrado."}` |
 | Duplicado detectado por el índice de la BD durante la inserción | `409` | `{"message":"Ese dato ya está registrado."}` |
 | Nombre ausente, de menos de 2 caracteres o de más de 255 | `422` | Error de validación en `fullName` |
+| Empresa ausente, vacía, de menos de 2 caracteres o de más de 255 | `422` | Error de validación en `organizer.displayName` |
 | Correo ausente, inválido o de más de 255 caracteres | `422` | Error de validación en `email` |
 | Contraseña ausente o que incumple algún requisito | `422` | Error de validación en `password` |
 | Rol ausente, `ADMIN` o cualquier valor distinto de `CLIENT`/`ORGANIZER` | `422` | Error de validación en `role` |
@@ -400,9 +408,9 @@ Las migraciones de creación (`0001_01_01_000003` a `000005`) crean las tablas d
 
 | Tabla | Columnas de negocio |
 |---|---|
-| `users` | `full_name`, `email`, `password`, `role_id`, `active`, `terms_accepted_at`, `marketing_opt_in` opcional |
-| `client_profiles` | `user_id`, `doc_number` (DNI), `details` JSON opcional |
-| `organizer_profiles` | `user_id`, `tax_id` (RUC), `details` JSON opcional |
+| `users` | `full_name`, `email`, `password`, `role_id`, `active`, `terms_accepted_at`; `marketing_opt_in` conservado para datos históricos, fuera del registro |
+| `client_profiles` | `user_id`, `doc_number` (DNI); `details` JSON histórico, sin nuevas escrituras en el registro |
+| `organizer_profiles` | `user_id`, `tax_id` (RUC), `details` JSON con `displayName` (empresa) para registros nuevos |
 
 Las tablas también incluyen sus claves primarias y marcas de tiempo. `role_id`
 y `user_id` son claves foráneas; `users.email`, `client_profiles.doc_number` y
@@ -432,8 +440,8 @@ docker compose exec app php artisan test
 
 | Archivo | Cobertura |
 |---|---|
-| `tests/Feature/RegisterTest.php` | Registro de ambos roles, cada requisito de contraseña, aceptación estricta de T&C, documentos inválidos, duplicados, bloqueo de `ADMIN` y protección frente a manipulación del payload |
-| `tests/Feature/LoginTest.php` | Login correcto de los tres roles, credenciales incorrectas, cuentas inactivas, entradas inválidas, JWT firmado con identificador y rol sin datos personales, e intento de modificar el rol desde el payload |
+| `tests/Feature/RegisterTest.php` | Registro de ambos roles, empresa obligatoria para organizadores, campos adicionales ignorados, cada requisito de contraseña, aceptación estricta de T&C, documentos inválidos, duplicados, bloqueo de `ADMIN` y protección frente a manipulación del payload |
+| `tests/Feature/LoginTest.php` | Login correcto de los tres roles, exclusión de detalles históricos fuera del contrato, credenciales incorrectas, cuentas inactivas, entradas inválidas, JWT firmado con identificador y rol sin datos personales, e intento de modificar el rol desde el payload |
 | `tests/Feature/RegistrationMigrationTest.php` | Columnas del esquema final, índices únicos, claves foráneas y unicidad de DNI/RUC en la base de pruebas |
 | `tests/Feature/RoleMiddlewareTest.php` | Acceso permitido y rechazos `401` sin token y `403` con rol no autorizado |
 | `tests/Feature/SessionSecurityTest.php` | Sesiones abiertas válidas tras desactivar hasta el vencimiento, duración configurable en minutos, acceso antes/rechazo después de expirar y catálogo público |
@@ -447,7 +455,8 @@ docker compose exec app php artisan test
 | `tests/Feature/DemoThreeMigrationTest.php` | Migraciones reversibles e individualización de ventas antiguas conservando códigos/importes/stock |
 | `tests/Feature/FrontendCompatibilityTest.php` | JSON/imágenes, catálogos, filtros, órdenes, comisión, idempotencia, permisos, cancelación, rollback e importación histórica |
 
-Última verificación del backend: **235 pruebas y 1286 aserciones aprobadas**.
+Última verificación del backend (2026-10-29): **242 pruebas y 1318 aserciones
+aprobadas** con PHPUnit en Docker/PHP 8.4.27 y SQLite en memoria, sin red.
 La comprobación aislada con servicios Angular y las carreras concurrentes en
 MySQL están registradas en [FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBILITY.md).
 

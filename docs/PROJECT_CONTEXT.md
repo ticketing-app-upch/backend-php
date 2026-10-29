@@ -1,6 +1,6 @@
 # Contexto del proyecto para IA
 
-Actualizado: 2026-10-28. Alcance de este checkout: **backend-php de AlpaTeck**.
+Actualizado: 2026-10-29. Alcance de este checkout: **backend-php de AlpaTeck**.
 Lee primero AGENTS.md y este archivo. Después consulta únicamente los archivos
 del flujo que vas a cambiar. README.md conserva los ejemplos y contratos completos.
 Si una implementación cambia, actualiza este resumen; el código y las migraciones
@@ -67,8 +67,11 @@ capa adicional de servicios/repositorios. Los recursos usan camelCase e IDs stri
 | PATCH /api/v1/admin/usuarios/{id}/estado | ADMIN | 200: usuario actualizado; 403 cuenta ADMIN; 404 usuario inexistente; 422 estado inválido |
 
 - Registro: fullName, email, password, role, acceptedTerms=true; CLIENT requiere
-  profile.docNumber (DNI string de 8 dígitos); ORGANIZER requiere organizer.taxId
+  profile.docNumber (DNI string de 8 dígitos); ORGANIZER requiere
+  organizer.displayName (nombre de empresa, 2–255 caracteres) y organizer.taxId
   (RUC string de 11 dígitos con prefijo 10/15/17/20). ADMIN no tiene autorregistro.
+  Campos confirmados por el usuario mediante capturas el 2026-10-29, conservando
+  la aceptación de T&C acordada. No ampliar el registro por otros contratos.
 - Password: mínimo 8 caracteres, mayúscula, número y carácter especial; cast hashed.
   Registro activa la cuenta sin confirmación por correo. No hay recuperación de contraseña.
 - Login normaliza email. Cuenta inactiva con contraseña correcta: 403 y
@@ -87,9 +90,12 @@ capa adicional de servicios/repositorios. Los recursos usan camelCase e IDs stri
   No hay alta/eliminación administrativa ni cambios de estado sobre administradores.
 - Logout usa blacklist y caché compartida (database en Render); no desactivar
   JWT_BLACKLIST_ENABLED si se necesita revocación. El navegador debe borrar sus datos.
-- Perfiles opcionales del frontend y marketingOptIn se conservan con lista explícita
-  de campos; detalles en JSON de client_profiles/organizer_profiles. No aceptar roles
-  ni verificationStatus dentro de esos datos. Se mantienen DNI/RUC y permisos.
+- Registro ignora campos adicionales (teléfono, país, género, marketingOptIn,
+  docType, etc.). Solo guarda DNI para CLIENT y RUC/nombre de empresa para ORGANIZER;
+  el nombre de empresa usa organizer_profiles.details.displayName. Registro/login
+  devuelven únicamente los campos acordados, incluso para perfiles históricos.
+  Las columnas details y marketing_opt_in existentes no se eliminan ni se limpian;
+  no se modifican datos históricos ni migraciones por esta corrección.
 
 ## Demo 3: eventos, favoritos y tickets
 
@@ -197,6 +203,13 @@ aprobados. Cuatro carreras concurrentes en MySQL 8.0.46 aislado aprobadas (últi
 entrada, idempotencia, multizona y cancelación), sin sobreventa ni doble restauración.
 No se probó concurrencia PostgreSQL. No se tocaron las BD habituales ni Render.
 Pint aprobado en los 38 archivos PHP modificados; 34 rutas API registradas.
+El 2026-10-29: registro limitado a los campos confirmados por el usuario y empresa
+obligatoria para ORGANIZER. Suite completa ejecutada directamente con PHPUnit
+en Docker/PHP 8.4.27, sin red y con SQLite en memoria: 242 pruebas y 1318 aserciones
+aprobadas; Pint aprobado en los 7 archivos PHP corregidos. Se verifica el descarte
+de extras y la respuesta de login para perfiles históricos sin cambiar sus datos.
+Sin cambios en frontend, migraciones ni despliegue; no se repitió la integración
+Angular ni las pruebas concurrentes para esta corrección.
 Registros de entregas: EPIC1_IMPLEMENTATION.md y DEMO3_IMPLEMENTATION.md;
 consultarlos solo para revisar el alcance y los archivos de cada entrega.
 

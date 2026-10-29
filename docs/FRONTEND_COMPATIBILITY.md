@@ -1,6 +1,6 @@
 # Compatibilidad con frontend-angular demo3
 
-Actualizado: 2026-10-28. Referencia inspeccionada: rama `demo3`, commit `52e027a`.
+Actualizado: 2026-10-29. Referencia inspeccionada: rama `demo3`, commit `52e027a`.
 Esta entrega modifica únicamente el backend. No conecta ni despliega los dos
 repositorios y no modifica la configuración ni el código fuente de Angular.
 
@@ -142,11 +142,18 @@ servidor. Se verifica disponibilidad y total de nuevo al confirmar.
 
 ## Perfiles y funciones que siguen en el navegador
 
-Registro/login mantienen `{token,user}`, permisos y códigos de error. Se guardan
-los campos opcionales del perfil enviados por el formulario en JSON con una
-lista explícita de campos, y marketingOptIn si se proporciona. No se persisten
-roles ni verificationStatus enviados dentro de perfiles. Se conserva DNI de
-8 dígitos y RUC de 11; las respuestas de autenticación no exponen active ni secretos.
+Registro/login mantienen `{token,user}`, permisos y códigos de error. El alcance
+del registro fue confirmado por el usuario mediante capturas el 2026-10-29:
+fullName, email, password, role y acceptedTerms=true; CLIENT requiere
+profile.docNumber (DNI de 8 dígitos) y ORGANIZER requiere organizer.displayName
+(empresa, 2–255 caracteres) y organizer.taxId (RUC de 11 dígitos).
+El nombre de empresa ya llega como displayName desde Angular y se guarda en
+organizer_profiles.details. Se ignoran todos los campos adicionales del formulario,
+incluidos teléfono, país, género y marketingOptIn. No se guardan ni se devuelven
+esos datos en registro/login. Las respuestas usan campos explícitos para excluir
+también detalles históricos; las columnas y los datos existentes se conservan.
+Una cuenta antigua sin nombre de empresa puede iniciar sesión y devuelve
+organizer.displayName=null. No se exponen active, roles internos ni secretos.
 
 En el frontend original no hay HTTP para favoritos, validación pública del QR
 ni logout. Esas acciones seguirán siendo locales hasta que su equipo conecte
@@ -157,6 +164,14 @@ epicGuard(5), deshabilitado en Demo 3. No se cambia Angular para ocultar estos l
 
 ## Verificación
 
+- Corrección del registro (2026-10-29): suite completa ejecutada directamente
+  con PHPUnit en Docker/PHP 8.4.27, sin red y con SQLite en memoria: 242 pruebas
+  y 1318 aserciones aprobadas. Se verifica empresa obligatoria, descarte de
+  campos adicionales y login de cuentas históricas sin exponer sus detalles
+  fuera del contrato ni modificarlos. Pint aprobado en los 7 archivos PHP
+  corregidos. No se modificó el frontend ni el despliegue.
+- Las verificaciones de integración y concurrencia siguientes corresponden a
+  la entrega anterior del 2026-10-28; no se repitieron para esta corrección.
 - Suite completa en Docker/PHP 8.4.27 y SQLite en memoria: 235 pruebas,
   1286 aserciones aprobadas, incluyendo migración histórica y rollback de compras.
 - Laravel Pint: 38 archivos PHP modificados aprobados; 34 rutas API registradas.

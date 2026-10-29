@@ -311,7 +311,7 @@ class FrontendCompatibilityTest extends TestCase
         $this->postJson('/api/v1/dynamic-price', [])->assertUnprocessable();
     }
 
-    public function test_frontend_registration_preserves_profile_details_without_exposing_internal_fields(): void
+    public function test_frontend_registration_ignores_extra_fields_without_exposing_internal_fields(): void
     {
         $this->postJson('/api/auth/register', [
             'fullName' => 'Cliente Demo', 'email' => 'cliente@example.test', 'password' => 'TestPass123!',
@@ -319,11 +319,13 @@ class FrontendCompatibilityTest extends TestCase
             'profile' => ['docType' => 'DNI', 'docNumber' => '12345678', 'country' => 'Perú', 'city' => 'Lima',
                 'district' => '', 'hasPeruvianNationality' => false, 'gender' => 'F', 'phoneCode' => '+51', 'phone' => '987654321',
                 'role' => 'ADMIN'],
-        ])->assertCreated()->assertJsonPath('user.profile.city', 'Lima')->assertJsonPath('user.marketingOptIn', false)
+        ])->assertCreated()->assertJsonPath('user.profile.docNumber', '12345678')
+            ->assertJsonMissingPath('user.profile.city')->assertJsonMissingPath('user.marketingOptIn')
             ->assertJsonMissingPath('user.password')->assertJsonMissingPath('user.role_id')
             ->assertJsonMissingPath('user.profile.role')->assertJsonMissingPath('user.active');
         $this->postJson('/api/auth/login', ['email' => 'cliente@example.test', 'password' => 'TestPass123!', 'remember' => true])
-            ->assertOk()->assertJsonPath('user.profile.phone', '987654321');
+            ->assertOk()->assertJsonPath('user.profile.docNumber', '12345678')
+            ->assertJsonMissingPath('user.profile.phone')->assertJsonMissingPath('user.marketingOptIn');
     }
 
     public function test_order_issuance_failure_rolls_back_order_tickets_and_capacity(): void

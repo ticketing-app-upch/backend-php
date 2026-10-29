@@ -58,8 +58,15 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
   /pricing/api/v1/dynamic-price; el puerto local 8000 sirve el mismo backend.
   No implementar reglas dinámicas de Demo 4 ni confiar en precios del cliente.
 - Banners en event_banners (DB); el catálogo nunca debe cargar su contenido.
-- Registro conserva detalles opcionales del perfil en JSON con lista explícita
-  de campos; nunca persistir roles/verificationStatus enviados dentro del perfil.
+- Registro limitado a los campos confirmados por el usuario el 2026-10-29:
+  fullName, email, password, role y acceptedTerms=true; CLIENT requiere
+  profile.docNumber (DNI) y ORGANIZER organizer.displayName (empresa) y taxId (RUC).
+  Ignorar campos adicionales; no guardar teléfono, país, género, marketingOptIn
+  ni otros detalles del formulario. Respuestas de registro/login con lista
+  explícita de esos campos; no devolver detalles históricos fuera del contrato.
+  El nombre de empresa se guarda en organizer_profiles.details.displayName.
+  Conservar columnas/datos históricos; no reescribir migraciones ni ampliar
+  el registro al adaptar otros contratos del frontend.
 - Detalle de contratos/migraciones Demo 3: docs/DEMO3_IMPLEMENTATION.md. No agregar
   cola, anti-scalping, correos ni aprobación/edición de rechazados (Demo 4).
 
