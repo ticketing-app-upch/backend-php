@@ -63,11 +63,11 @@ class OrderController extends Controller
                 $lines[] = ['zoneId' => (string) $zone->id, 'zoneName' => $zone->name,
                     'unitPrice' => $price / 100, 'quantity' => $item['quantity']];
                 for ($index = 0; $index < $item['quantity']; $index++) {
-                    $entries[] = ['zone' => $zone, 'price' => $price, 'fee' => intdiv($price * 6, 100)];
+                    $entries[] = ['zone' => $zone, 'price' => $price];
                 }
             }
-            $fee = intdiv($subtotal * 6 + 50, 100);
-            $total = $subtotal + $fee;
+            // Demo 3: el precio publicado por zona es final, sin recargo de servicio.
+            $total = $subtotal;
             abort_if(isset($data['expectedTotal']) && (int) round($data['expectedTotal'] * 100) !== $total,
                 409, 'El precio cambió. Solicita una nueva cotización antes de confirmar.');
             // Simulación de Demo 3: nunca se reciben ni se persisten datos de tarjeta.
@@ -80,23 +80,15 @@ class OrderController extends Controller
                 'event_venue' => $event->venue_name.($event->city ? ', '.$event->city : ''),
                 'status' => 'CONFIRMADA', 'payment_method' => $data['paymentMethod'] ?? 'CARD',
                 'idempotency_key' => $data['idempotencyKey'] ?? null, 'request_hash' => $hash,
-                'lines' => $lines, 'subtotal' => $subtotal / 100, 'fee' => $fee / 100, 'total' => $total / 100,
+                'lines' => $lines, 'subtotal' => $subtotal / 100, 'fee' => 0, 'total' => $total / 100,
             ]);
-            // Reparte los centavos de redondeo sin alterar el total de la orden.
-            $remainder = $fee - array_sum(array_column($entries, 'fee'));
-            $ranked = array_keys($entries);
-            usort($ranked, fn ($a, $b) => (($entries[$b]['price'] * 6) % 100) <=> (($entries[$a]['price'] * 6) % 100) ?: $a <=> $b);
-            foreach (array_slice($ranked, 0, $remainder) as $index) {
-                $entries[$index]['fee']++;
-            }
             foreach ($entries as $entry) {
-                $ticketFee = $entry['fee'];
                 $zone = $entry['zone'];
                 $order->tickets()->create([
                     'user_id' => $user->id, 'event_zone_id' => $zone->id, 'quantity' => 1,
                     'code' => 'TICK-'.now()->year.'-'.strtoupper(bin2hex(random_bytes(8))),
-                    'unit_price' => $entry['price'] / 100, 'service_fee' => $ticketFee / 100,
-                    'total_price' => ($entry['price'] + $ticketFee) / 100,
+                    'unit_price' => $entry['price'] / 100, 'service_fee' => 0,
+                    'total_price' => $entry['price'] / 100,
                     'event_title' => $event->title, 'event_starts_at' => $event->starts_at,
                     'venue_name' => $event->venue_name, 'venue_address' => $event->venue_address,
                     'zone_name' => $zone->name,

@@ -1,6 +1,6 @@
 # Contexto del proyecto para IA
 
-Actualizado: 2026-10-29. Alcance de este checkout: **backend-php de AlpaTeck**.
+Actualizado: 2026-10-30. Alcance de este checkout: **backend-php de AlpaTeck**.
 Lee primero AGENTS.md y este archivo. Después consulta únicamente los archivos
 del flujo que vas a cambiar. README.md conserva los ejemplos y contratos completos.
 Si una implementación cambia, actualiza este resumen; el código y las migraciones
@@ -137,7 +137,9 @@ docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
   requieren CLIENT y solo retornan propios (ajeno 404).
 - POST /api/orders (CLIENT activo): CreateOrderPayload del frontend, con eventId,
   items, expectedTotal/paymentMethod/paymentResult/idempotencyKey opcionales.
-  Recalcula precios de BD, comisión del 6% y redondeos en centavos; máximo 6.
+  Recalcula precios finales de BD en centavos, sin comisión adicional; máximo 6.
+  Nuevas órdenes: fee=0, tickets service_fee=0 y total=subtotal. No recalcular
+  compras históricas ni sus reintentos idempotentes. Alineado con Angular el 2026-10-30.
   DECLINED causa 402; precio distinto/stock insuficiente 409, sin escrituras parciales.
   Bloquea usuario y zonas en orden estable. Misma clave/payload devuelve orden previa
   con 200; clave reutilizada con otro payload causa 409. Primera creación 201.

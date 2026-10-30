@@ -8,7 +8,7 @@ antes de abrir únicamente los archivos del flujo solicitado.
 
 El contrato vigente para **frontend-angular, rama demo3**, está en
 [FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBILITY.md). Incluye eventos JSON,
-dos imágenes Base64, 15 recintos/50 zonas, órdenes e importes con comisión del 6%.
+dos imágenes Base64, 15 recintos/50 zonas, órdenes e importes finales sin comisión adicional.
 La entrega anterior está registrada en [DEMO3_IMPLEMENTATION.md](docs/DEMO3_IMPLEMENTATION.md).
 El multipart y la compra anterior siguen disponibles; para obtener la respuesta
 anterior de eventos se puede usar `?contract=legacy`. Registro/login conservan
@@ -40,7 +40,7 @@ sus rutas y usan únicamente los campos de registro confirmados por el usuario.
 | `GET /api/events/{id}/secondary-banner` | Público | Entrega la segunda imagen JPEG |
 | `GET /api/organizers/{organizerId}/events` | Organizador propietario o `ADMIN` | Lista eventos del organizador |
 | `DELETE /api/events/{id}` | Organizador propietario o `ADMIN` | Elimina solo eventos sin ventas ni órdenes |
-| `POST /api/orders` | `CLIENT` activo | Compra con comisión del 6%, tickets individuales e idempotencia |
+| `POST /api/orders` | `CLIENT` activo | Compra sin comisión adicional, tickets individuales e idempotencia |
 | `GET /api/orders/me` | `CLIENT` | Lista compras propias |
 | `GET /api/orders/{id}` | Cliente propietario o `ADMIN` | Detalle de una compra |
 | `PATCH /api/orders/{id}` | `ADMIN` | Cancela una compra confirmada y restaura stock una sola vez |
@@ -393,7 +393,7 @@ Para verificar BUG-004 / TC-EXP-002, utiliza `GET /api/events/{id}/sales-report`
 | `GET /api/events/{id}` | `200`: datos de un evento publicado y sus zonas | `404`: `{"message":"Evento no disponible"}` si no existe o no está publicado |
 | `POST /api/events` | `201`: evento publicado; admite JSON con dos imágenes Base64 o multipart anterior | `401` sin JWT; `403` por rol/cuenta inactiva; `422` por datos/imágenes inválidos; `409` por separación menor de 24 horas en JSON o mismo día de Lima en multipart |
 | `POST /api/events/{id}/tickets` | `201`: paymentStatus, quantity, totalPrice y array tickets; un ticket por entrada | `401` sin JWT; `403` por rol/cuenta inactiva; `404` evento no disponible; `422` por pago/zona inválidos o total superior a 6; `409` por aforo insuficiente |
-| `POST /api/orders` | `201`: orden con líneas, tickets, subtotal, comisión del 6% y total; `200` en reintento idéntico | `402` pago simulado rechazado; `409` precio/stock/clave incompatibles; `422` formato, zonas o cantidades inválidos; `401/403` por autenticación/permisos |
+| `POST /api/orders` | `201`: orden con líneas, tickets, subtotal, fee=0 y total sin recargo; `200` en reintento idéntico | `402` pago simulado rechazado; `409` precio/stock/clave incompatibles; `422` formato, zonas o cantidades inválidos; `401/403` por autenticación/permisos |
 | `GET /api/events/{id}/sales-report` | `200`: devuelve `event`, `summary` y `zones`; los totales de ventas e ingresos son cero si no hubo ventas | `401` sin token válido; `403` si no es organizador o no es dueño del evento; `404` si el evento no existe |
 
 En la compra, el error `409` devuelve `{"message":"Aforo insuficiente para la cantidad solicitada"}`. Consultar el reporte de un evento ajeno devuelve `403` con `{"message":"No tienes permiso para consultar este reporte."}`. Una compra rechazada no descuenta cupos ni crea entradas parcialmente.
@@ -453,7 +453,7 @@ docker compose exec app php artisan test
 | `tests/Feature/PurchaseTicketTest.php` | Pago simulado, máximo 6, varias zonas, aforo, rollback y tickets individuales |
 | `tests/Feature/TicketReadTest.php` | Propiedad de entradas, snapshots inmutables y confirmación pública sin datos personales |
 | `tests/Feature/DemoThreeMigrationTest.php` | Migraciones reversibles e individualización de ventas antiguas conservando códigos/importes/stock |
-| `tests/Feature/FrontendCompatibilityTest.php` | JSON/imágenes, catálogos, filtros, órdenes, comisión, idempotencia, permisos, cancelación, rollback e importación histórica |
+| `tests/Feature/FrontendCompatibilityTest.php` | JSON/imágenes, catálogos, filtros, órdenes sin recargo, idempotencia, permisos, cancelación, rollback e importación histórica |
 
 Última verificación del backend (2026-10-29): **242 pruebas y 1318 aserciones
 aprobadas** con PHPUnit en Docker/PHP 8.4.27 y SQLite en memoria, sin red.

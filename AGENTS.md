@@ -48,9 +48,11 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
   Publicación directa e inmutabilidad. Solo se eliminan eventos sin historial.
 - Compras: pago simulado, máximo 6 entre todas las zonas y un Ticket por entrada.
   Bloquear filas de zonas en orden estable y guardar snapshots inmutables.
-- /api/orders agrupa tickets, calcula comisión del 6% en centavos e idempotencia
+- /api/orders agrupa tickets con precios finales sin comisión e idempotencia
   persistente por usuario. Reintento idéntico 200; clave con otro payload 409.
   Cancelación solo ADMIN: restaurar stock una vez y rechazar validación pública.
+  Nuevas compras: fee y service_fee son 0; total = suma de entradas en centavos.
+  Conservar importes/comisiones históricas y respuestas de reintentos previos.
   El endpoint anterior de compra mantiene su pago/importe sin comisión.
 - Catálogo: 15 recintos y 50 zonas en database/data/frontend-venues.json. No borrar
   recintos históricos ni cambiar IDs/nombres de zonas que tengan ventas.

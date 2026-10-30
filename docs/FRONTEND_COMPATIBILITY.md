@@ -1,6 +1,6 @@
 # Compatibilidad con frontend-angular demo3
 
-Actualizado: 2026-10-29. Referencia inspeccionada: rama `demo3`, commit `52e027a`.
+Actualizado: 2026-10-30. Referencia vigente: rama `demo3`, commit `fa96e8f`.
 Esta entrega modifica únicamente el backend. No conecta ni despliega los dos
 repositorios y no modifica la configuración ni el código fuente de Angular.
 
@@ -95,7 +95,7 @@ sin ventas ni órdenes, incluso si una orden anterior fue cancelada.
 {
   "eventId": "123",
   "items": [{"zoneId":"456","quantity":1}],
-  "expectedTotal": 53,
+  "expectedTotal": 50,
   "paymentMethod": "CARD",
   "paymentResult": "APPROVED",
   "idempotencyKey": "identificador-del-intento"
@@ -104,9 +104,10 @@ sin ventas ni órdenes, incluso si una orden anterior fue cancelada.
 
 Los IDs son los devueltos por la API, no los IDs del mock. El backend comprueba
 CLIENT activo, evento futuro publicado, zonas propias, límite del evento (máximo
-6) y stock. Recalcula el importe en centavos desde los precios de BD y aplica
-6% de comisión una sola vez. Distribuye los centavos de redondeo entre tickets
-para conservar exactamente el total de la orden. Un expectedTotal distinto causa
+6) y stock. Desde el 2026-10-30, alineado con Angular demo3, recalcula el importe
+en centavos desde los precios finales de BD sin agregar comisión: fee=0,
+serviceFee=0 y total=subtotal. Las compras históricas y sus importes se conservan;
+los reintentos idempotentes devuelven la compra original. Un expectedTotal distinto causa
 409 sin escrituras. La aprobación es simulada; DECLINED devuelve 402 sin compras
 ni descuentos de stock. No se reciben ni guardan tarjeta, vencimiento ni CVV en
 este endpoint: el frontend actual no los envía.
