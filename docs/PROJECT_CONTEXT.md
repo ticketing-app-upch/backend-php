@@ -197,9 +197,11 @@ del Perú conserva sus 2 zonas propias sin venue_zone_id y aforos de maqueta
 relativas a la siembra: el evento más próximo queda a 7 días conservando los
 intervalos del archivo, para que el catálogo nunca venza. image_url se calcula
 como en el frontend (palabra clave/recinto/categoría con pools Unsplash y fotos
-locales de /events). Idempotente: repetir no duplica ni resetea stock; solo
-AdminUserSeederTest se ajustó por los dos usuarios demo; el ADMIN sigue saliendo
-exclusivamente de INITIAL_ADMIN_*.
+locales de /events). Idempotente: repetir no duplica ni resetea stock; los DNI/RUC
+ceden ante los ya registrados en la BD (candidatos deterministas y aviso si no queda
+ninguno) y toda la siembra corre en una transacción, por lo que nunca deja usuarios
+a medias; solo AdminUserSeederTest se ajustó por los dos usuarios demo; el ADMIN sigue
+saliendo exclusivamente de INITIAL_ADMIN_*.
 
 Render ejecuta config/route/view cache, migrate --force y db:seed --force.
 Completar INITIAL_ADMIN_* en el panel privado; no inventar credenciales en fuentes.

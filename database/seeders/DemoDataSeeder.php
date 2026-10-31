@@ -2,16 +2,23 @@
 
 namespace Database\Seeders;
 
+use App\Models\ClientProfile;
 use App\Models\Event;
+use App\Models\OrganizerProfile;
 use App\Models\Role;
 use App\Models\User;
 use App\Models\Venue;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class DemoDataSeeder extends Seeder
 {
     private const BASELINE_START = '2026-11-04 15:00:00';
+
+    private const DEMO_DOC_NUMBERS = ['12345678', '87654321', '45671234', '70000001'];
+
+    private const DEMO_TAX_IDS = ['20123456789', '20555123456', '10444567891'];
 
     private const FALLBACK_ZONE_CAPACITY = [
         'Entrada general' => 8000,
@@ -75,6 +82,13 @@ class DemoDataSeeder extends Seeder
 
     public function run(): void
     {
+        DB::transaction(function (): void {
+            $this->seedDemoUsersAndEvents();
+        });
+    }
+
+    private function seedDemoUsersAndEvents(): void
+    {
         $organizer = $this->demoOrganizer();
         $this->demoClient();
 
@@ -135,8 +149,21 @@ class DemoDataSeeder extends Seeder
             'active' => true,
             'terms_accepted_at' => now(),
         ]);
-        $user->organizerProfile()->firstOrCreate([], [
-            'tax_id' => '20123456789',
+
+        if ($user->organizerProfile()->exists()) {
+            return $user;
+        }
+
+        $taxId = $this->firstFreeDocument(self::DEMO_TAX_IDS, fn (string $candidate) => OrganizerProfile::where('tax_id', $candidate)->exists());
+
+        if ($taxId === null) {
+            $this->command?->warn('DemoDataSeeder: ningún RUC demo disponible; el organizador no recibe perfil.');
+
+            return $user;
+        }
+
+        $user->organizerProfile()->create([
+            'tax_id' => $taxId,
             'details' => ['displayName' => 'Ames Producciones'],
         ]);
 
@@ -153,7 +180,31 @@ class DemoDataSeeder extends Seeder
             'active' => true,
             'terms_accepted_at' => now(),
         ]);
-        $user->clientProfile()->firstOrCreate([], ['doc_number' => '12345678']);
+
+        if ($user->clientProfile()->exists()) {
+            return;
+        }
+
+        $docNumber = $this->firstFreeDocument(self::DEMO_DOC_NUMBERS, fn (string $candidate) => ClientProfile::where('doc_number', $candidate)->exists());
+
+        if ($docNumber === null) {
+            $this->command?->warn('DemoDataSeeder: ningún DNI demo disponible; el cliente no recibe perfil.');
+
+            return;
+        }
+
+        $user->clientProfile()->create(['doc_number' => $docNumber]);
+    }
+
+    private function firstFreeDocument(array $candidates, callable $taken): ?string
+    {
+        foreach ($candidates as $candidate) {
+            if (! $taken($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     private function shiftMinutes(): int
