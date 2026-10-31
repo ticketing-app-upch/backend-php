@@ -44,9 +44,18 @@ class OrderController extends Controller
             }
             $event = Event::whereKey($data['eventId'])->where('status', 'PUBLISHED')->where('starts_at', '>', now())->first();
             abort_unless($event, 404, 'Evento no disponible');
-            if ($items->sum('quantity') > min(6, $event->max_per_order)) {
+            $requestedQuantity = $items->sum('quantity');
+            if ($requestedQuantity > min(6, $event->max_per_order)) {
                 throw ValidationException::withMessages(['items' => 'La cantidad supera el límite del evento.']);
             }
+            // La cuenta ya está bloqueada: dos intentos no pueden consumir el mismo cupo.
+            $purchasedQuantity = (int) $user->tickets()
+                ->whereHas('eventZone', fn ($zones) => $zones->where('event_id', $event->id))
+                ->where(fn ($tickets) => $tickets->whereNull('ticket_order_id')
+                    ->orWhereHas('order', fn ($orders) => $orders->where('status', 'CONFIRMADA')))
+                ->sum('quantity');
+            abort_if($purchasedQuantity + $requestedQuantity > 6, 409,
+                'La compra supera el máximo de 6 entradas por usuario para este evento.');
             $zones = EventZone::where('event_id', $event->id)->whereIn('id', $items->pluck('zoneId'))
                 ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             if ($zones->count() !== $items->count()) {

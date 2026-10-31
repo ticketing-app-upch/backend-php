@@ -31,7 +31,7 @@ class StoreEventRequest extends FormRequest
                 'imageUrl' => ['nullable', 'string', 'max:2048', 'regex:~^(https?://|/)~'],
                 'bannerUrl' => ['required', new Base64Jpeg],
                 'secondaryBannerUrl' => ['required', 'different:bannerUrl', new Base64Jpeg],
-                'zones' => ['required', 'array', 'min:2'],
+                'zones' => ['required', 'array', 'min:1'],
                 'zones.*.id' => ['required', 'string', 'distinct', 'max:128'],
                 'zones.*.name' => ['required', 'string', 'distinct', 'max:255'],
                 'zones.*.capacity' => ['required', 'integer', 'min:1'],

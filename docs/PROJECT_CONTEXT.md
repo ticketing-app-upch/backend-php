@@ -103,13 +103,18 @@ capa adicional de servicios/repositorios. Los recursos usan camelCase e IDs stri
 Contrato vigente: docs/FRONTEND_COMPATIBILITY.md. Entrega anterior registrada en
 docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
 
-- GET /api/v1/recintos (ORGANIZER): 15 recintos y 50 zonas exactos del catálogo
-  Angular en database/data/frontend-venues.json. Aforos de maqueta, nombres exactos,
+- GET /api/v1/recintos (ORGANIZER): 16 recintos y 51 zonas en
+  database/data/frontend-venues.json: 15 recintos originales de Angular más
+  Recinto de prueba (Lima, slug recinto-prueba, una zona General de capacidad 1).
+  VenueSeeder carga el JSON y está incluido en DatabaseSeeder. Ejecutarlo en la
+  base del entorno tras actualizar el código; el pull no actualiza la BD.
+  Aforos de maqueta, nombres exactos,
   slug y geometría auxiliar. No borrar los tres recintos antiguos si ya existen;
   se conservan como históricos y no se muestran en el catálogo nuevo.
 - POST /api/events también recibe EventItem JSON: name, venue string, city,
   zonas con name/capacity/sold=0/price y dos imágenes JPEG Base64 distintas.
   Resuelve recinto/zonas en BD y verifica aforos; el dueño procede del JWT.
+  Admite una o más zonas, exigiendo siempre todas las zonas del recinto seleccionado.
   JSON exige 24 horas de separación; frontend IDs temporales no son IDs de compra.
 - POST /api/events (ORGANIZER activo): multipart con venueId, archivo banner JPEG
   <=2 MiB, mínimo 1920×480/4:1, startsAt futuro y zones[{venueZoneId,basePrice>0}].
@@ -133,6 +138,13 @@ docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
   cardNumber string 13–19 dígitos, cvv string 3–4 dígitos y expiresAt YYYY-MM-DD futuro.
   Aprobación simulada sin guardar tarjeta/CVV; bloquea usuario y zonas por ID.
   Sin aforo: 409, sin cambios parciales. Respuesta {paymentStatus,quantity,totalPrice,tickets}.
+- BUG-008 (2026-10-30): ambas rutas de compra comprueban también un máximo
+  acumulado de 6 entradas confirmadas por usuario y evento, entre todos sus
+  intentos y zonas. Incluye tickets históricos sin orden sumando quantity;
+  las órdenes CANCELADA no consumen cupo. Usuario bloqueado antes de leer
+  el acumulado; exceso devuelve 409 sin nuevas órdenes, tickets ni descuentos.
+  maxPerOrder conserva su significado por intento. Los reintentos idempotentes
+  se resuelven antes del acumulado y devuelven la orden existente.
 - Una entrada = un Ticket con quantity=1, código TICK-año-16hex y snapshots
   inmutables de precio, zona, evento y fecha. GET /api/v1/tickets y .../{id}
   requieren CLIENT y solo retornan propios (ajeno 404).
@@ -227,8 +239,25 @@ aprobadas; Pint aprobado en los 7 archivos PHP corregidos. Se verifica el descar
 de extras y la respuesta de login para perfiles históricos sin cambiar sus datos.
 Sin cambios en frontend, migraciones ni despliegue; no se repitió la integración
 Angular ni las pruebas concurrentes para esta corrección.
+El 2026-10-30, BUG-008: límite acumulado de 6 entradas confirmadas por usuario/evento
+en ambas rutas de compra, conservando el límite de cada intento y los reintentos
+idempotentes. Tickets históricos sin orden incluidos; cancelaciones liberan cupo.
+19 casos nuevos de regresión; suite completa con 262 pruebas y 1474 aserciones
+aprobadas en SQLite en memoria, Docker/PHP 8.4.27 sin red. Pint en los tres PHP
+cambiados aprobado. Cinco carreras en MySQL 8.0.46 temporal con procesos PHP
+distintos y peticiones al kernel HTTP de Laravel aprobadas, sin superar el cupo
+ni duplicar entradas por reintentos. No se probó PostgreSQL. Se retiraron los
+contenedores temporales; no se tocaron frontend, migraciones, despliegue ni BD habitual.
 Registros de entregas: EPIC1_IMPLEMENTATION.md y DEMO3_IMPLEMENTATION.md;
 consultarlos solo para revisar el alcance y los archivos de cada entrega.
+
+Recinto de prueba (2026-10-30): catálogo ampliado a 16 recintos y 51 zonas;
+JSON de eventos admite min:1 en zones. Suite completa de 265 pruebas y 1510
+aserciones aprobadas en Docker/PHP 8.4.27 y SQLite en memoria, sin red;
+Pint aprobado en los tres PHP modificados. Verificados seeding idempotente,
+publicación con General de capacidad 1, detalle público y agotamiento tras
+una sola venta. El seeder del catálogo está incluido en DatabaseSeeder y debe
+ejecutarse en cada base que actualice su código.
 
 Pendientes generales fuera del alcance: CORS explícito, rate limiting y el SQL
 documental antiguo. No instalar paquetes nuevos, tocar producción ni realizar

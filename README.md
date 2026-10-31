@@ -8,7 +8,7 @@ antes de abrir únicamente los archivos del flujo solicitado.
 
 El contrato vigente para **frontend-angular, rama demo3**, está en
 [FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBILITY.md). Incluye eventos JSON,
-dos imágenes Base64, 15 recintos/50 zonas, órdenes e importes finales sin comisión adicional.
+dos imágenes Base64, 16 recintos/51 zonas, órdenes e importes finales sin comisión adicional.
 La entrega anterior está registrada en [DEMO3_IMPLEMENTATION.md](docs/DEMO3_IMPLEMENTATION.md).
 El multipart y la compra anterior siguen disponibles; para obtener la respuesta
 anterior de eventos se puede usar `?contract=legacy`. Registro/login conservan
@@ -26,12 +26,12 @@ sus rutas y usan únicamente los campos de registro confirmados por el usuario.
 | `GET /api/events` | Público | Lista eventos publicados y futuros |
 | `GET /api/events/{id}` | Público | Consulta un evento |
 | `POST /api/events` | `ORGANIZER` activo | Crea un evento con recinto predefinido, banner y precios por zona |
-| `GET /api/v1/recintos` | `ORGANIZER` | Lista los 15 recintos demostrativos y sus 50 zonas |
+| `GET /api/v1/recintos` | `ORGANIZER` | Lista los 16 recintos demostrativos y sus 51 zonas |
 | `GET /api/v1/eventos/mios` | `ORGANIZER` | Lista solo sus propios eventos |
 | `PUT/PATCH /api/events/{id}` | `ORGANIZER` | Rechaza edición con 403 en Demo 3 |
 | `GET /api/events/{id}/banner` | Público | Entrega el banner JPEG de un evento publicado |
 | `GET/POST/DELETE /api/v1/favoritos` | `CLIENT` | Consulta, agrega o elimina favoritos propios |
-| `POST /api/events/{id}/tickets` | `CLIENT` activo | Compra hasta 6 entradas entre zonas con pago simulado |
+| `POST /api/events/{id}/tickets` | `CLIENT` activo | Compra entradas con pago simulado y máximo acumulado de 6 por usuario/evento |
 | `GET /api/v1/tickets` | `CLIENT` | Lista sus tickets individuales |
 | `GET /api/v1/tickets/{id}` | Cliente propietario | Consulta su propia entrada |
 | `GET /api/v1/tickets/{code}/validacion` | Público | Confirmación de compra sin datos del comprador |
@@ -170,6 +170,25 @@ Mantener las claves existentes. Si se cambian variables privadas de `.env`,
 recrear `app` con `docker compose up -d --no-deps --force-recreate app`. Si se
 agregan los datos del administrador después del primer arranque, ejecutar luego
 `docker compose exec app php artisan db:seed`.
+
+### Cargar el recinto de prueba después de actualizar el código
+
+El catálogo versionado incluye **Recinto de prueba**, en Lima, con una sola zona
+**General** de capacidad **1**. La creación de eventos admite una o más zonas,
+siempre que sean todas las zonas del recinto y coincidan sus aforos.
+El catálogo completo tiene 16 recintos y 51 zonas.
+
+Después de hacer pull, con el entorno Docker ya levantado, cargar el catálogo
+en la base de ese integrante sin reconstruirla ni borrar datos:
+
+```bash
+docker compose exec app php artisan db:seed --class=VenueSeeder
+```
+
+`DatabaseSeeder` ya incluye `VenueSeeder`; el comando habitual
+`php artisan migrate --seed` también lo carga. En Render, el script de arranque
+ejecuta `php artisan db:seed --force` con el catálogo de la versión desplegada.
+El pull actualiza el JSON; cada base se actualiza cuando se ejecuta el seeder.
 
 Para detener los servicios conservando los datos de MySQL:
 
@@ -404,11 +423,24 @@ Para verificar BUG-004 / TC-EXP-002, utiliza `GET /api/events/{id}/sales-report`
 | `GET /api/events` | `200`: EventItem compatible con Angular, zonas, imágenes y campos de apoyo; `[]` si no hay coincidencias | `422` si los filtros son inválidos. Admite search, category, available, venue y date (`YYYY-MM-DD`, día calendario de Lima) |
 | `GET /api/events/{id}` | `200`: datos de un evento publicado y sus zonas | `404`: `{"message":"Evento no disponible"}` si no existe o no está publicado |
 | `POST /api/events` | `201`: evento publicado; admite JSON con dos imágenes Base64 o multipart anterior | `401` sin JWT; `403` por rol/cuenta inactiva; `422` por datos/imágenes inválidos; `409` por separación menor de 24 horas en JSON o mismo día de Lima en multipart |
-| `POST /api/events/{id}/tickets` | `201`: paymentStatus, quantity, totalPrice y array tickets; un ticket por entrada | `401` sin JWT; `403` por rol/cuenta inactiva; `404` evento no disponible; `422` por pago/zona inválidos o total superior a 6; `409` por aforo insuficiente |
-| `POST /api/orders` | `201`: orden con líneas, tickets, subtotal, fee=0 y total sin recargo; `200` en reintento idéntico | `402` pago simulado rechazado; `409` precio/stock/clave incompatibles; `422` formato, zonas o cantidades inválidos; `401/403` por autenticación/permisos |
+| `POST /api/events/{id}/tickets` | `201`: paymentStatus, quantity, totalPrice y array tickets; un ticket por entrada | `401` sin JWT; `403` por rol/cuenta inactiva; `404` evento no disponible; `422` por pago/zona inválidos o cantidad por intento superior al límite; `409` por aforo insuficiente o exceso acumulado por usuario/evento |
+| `POST /api/orders` | `201`: orden con líneas, tickets, subtotal, fee=0 y total sin recargo; `200` en reintento idéntico | `402` pago simulado rechazado; `409` precio/stock/clave incompatibles o exceso acumulado por usuario/evento; `422` formato, zonas o cantidades inválidos; `401/403` por autenticación/permisos |
 | `GET /api/events/{id}/sales-report` | `200`: devuelve `event`, `summary` y `zones`; los totales de ventas e ingresos son cero si no hubo ventas | `401` sin token válido; `403` si no es organizador o no es dueño del evento; `404` si el evento no existe |
 
 En la compra, el error `409` devuelve `{"message":"Aforo insuficiente para la cantidad solicitada"}`. Consultar el reporte de un evento ajeno devuelve `403` con `{"message":"No tienes permiso para consultar este reporte."}`. Una compra rechazada no descuenta cupos ni crea entradas parcialmente.
+
+BUG-008: un usuario puede tener como máximo **6 entradas confirmadas del mismo
+evento**, sumando todas sus compras y zonas por cualquiera de las dos rutas.
+Se cuentan también las entradas históricas sin orden; las canceladas no consumen
+cupo. Las compras de otros usuarios o de otros eventos tienen cupos independientes.
+Por ejemplo, después de comprar 4 entradas puede comprar otras 2; una tercera
+compra de 1 se rechaza con `409` y el mensaje
+`La compra supera el máximo de 6 entradas por usuario para este evento.`
+No se crean órdenes/tickets ni se descuenta stock al rechazarla.
+`maxPerOrder` sigue limitando cada intento, además del máximo acumulado.
+Un reintento idéntico de una orden existente devuelve esa misma orden con `200`
+incluso al haber alcanzado el cupo; no emite entradas adicionales. Las cuentas y
+zonas se bloquean para evitar que intentos simultáneos excedan el límite.
 
 ### Formato de los errores de validación
 
@@ -463,12 +495,19 @@ docker compose exec app php artisan test
 | `tests/Feature/StoreEventTest.php` | Recintos/mapas, banners, fechas de Lima, publicación atómica, permisos, inmutabilidad y Mis Eventos |
 | `tests/Feature/FavoriteTest.php` | Favoritos propios, idempotencia, índice único y catálogo personalizado |
 | `tests/Feature/PurchaseTicketTest.php` | Pago simulado, máximo 6, varias zonas, aforo, rollback y tickets individuales |
+| `tests/Feature/PurchaseLimitTest.php` | BUG-008: máximo acumulado por usuario/evento en ambas rutas, compras parciales, distintas zonas, cancelaciones, tickets históricos y reintentos idempotentes |
 | `tests/Feature/TicketReadTest.php` | Propiedad de entradas, snapshots inmutables y confirmación pública sin datos personales |
 | `tests/Feature/DemoThreeMigrationTest.php` | Migraciones reversibles e individualización de ventas antiguas conservando códigos/importes/stock |
 | `tests/Feature/FrontendCompatibilityTest.php` | JSON/imágenes, catálogos, filtros, órdenes sin recargo, idempotencia, permisos, cancelación, rollback e importación histórica |
 
-Última verificación del backend (2026-10-29): **242 pruebas y 1318 aserciones
+Última verificación del backend (2026-10-30): **265 pruebas y 1510 aserciones
 aprobadas** con PHPUnit en Docker/PHP 8.4.27 y SQLite en memoria, sin red.
+Incluye la carga idempotente del nuevo recinto, publicación JSON con una sola
+zona, consulta pública y rechazo de una segunda venta al agotarse la única entrada.
+BUG-008 agrega 19 casos de regresión y se comprobó además con cinco carreras
+en MySQL 8.0.46 temporal, en procesos PHP separados, sin exceder el cupo.
+Pint aprobado en los tres archivos PHP corregidos. No se probó concurrencia
+en PostgreSQL ni se modificaron las bases habituales.
 La comprobación aislada con servicios Angular y las carreras concurrentes en
 MySQL están registradas en [FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBILITY.md).
 
