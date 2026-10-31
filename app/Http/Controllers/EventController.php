@@ -236,9 +236,18 @@ class EventController extends Controller
                 }
                 $event = Event::where('status', 'PUBLISHED')->where('starts_at', '>', now())->find($id);
                 abort_unless($event, 404, 'Evento no disponible');
-                if (array_sum(array_column($items, 'quantity')) > min(6, $event->max_per_order)) {
+                $requestedQuantity = array_sum(array_column($items, 'quantity'));
+                if ($requestedQuantity > min(6, $event->max_per_order)) {
                     throw ValidationException::withMessages(['items' => 'La cantidad supera el límite del evento.']);
                 }
+                // Cuenta entradas de ambas rutas, incluidas las históricas sin orden.
+                $purchasedQuantity = (int) $user->tickets()
+                    ->whereHas('eventZone', fn ($zones) => $zones->where('event_id', $event->id))
+                    ->where(fn ($tickets) => $tickets->whereNull('ticket_order_id')
+                        ->orWhereHas('order', fn ($orders) => $orders->where('status', 'CONFIRMADA')))
+                    ->sum('quantity');
+                abort_if($purchasedQuantity + $requestedQuantity > 6, 409,
+                    'La compra supera el máximo de 6 entradas por usuario para este evento.');
                 // Orden estable: dos compras multizona toman los bloqueos en el mismo orden.
                 $zones = EventZone::where('event_id', $event->id)->whereIn('id', array_column($items, 'zoneId'))
                     ->orderBy('id')->lockForUpdate()->get()->keyBy('id');

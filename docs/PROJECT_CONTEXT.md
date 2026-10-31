@@ -1,6 +1,6 @@
 # Contexto del proyecto para IA
 
-Actualizado: 2026-10-28. Alcance de este checkout: **backend-php de AlpaTeck**.
+Actualizado: 2026-10-30. Alcance de este checkout: **backend-php de AlpaTeck**.
 Lee primero AGENTS.md y este archivo. Después consulta únicamente los archivos
 del flujo que vas a cambiar. README.md conserva los ejemplos y contratos completos.
 Si una implementación cambia, actualiza este resumen; el código y las migraciones
@@ -46,6 +46,7 @@ y limpieza del navegador corresponden a Angular y no se verifican aquí.
 | Administración de usuarios | AdminUserController, Requests/Admin, AdminUserResource | AdminUserManagementTest |
 | JWT y roles | config/auth.php, config/jwt.php, EnsureUserHasRole, bootstrap/app.php | SessionSecurityTest, RoleMiddlewareTest, ApiAuthenticationFailureTest |
 | Administrador inicial | AdminUserSeeder, DatabaseSeeder, config/initial_admin.php | AdminUserSeederTest |
+| Datos demo (eventos/usuarios) | DemoDataSeeder, database/data/frontend-events.json | DemoDataSeederTest |
 | Catálogo/creación/compra/reporte | EventController, Requests/Event, Resources de eventos/tickets/ventas | IndexEventTest, StoreEventTest, PurchaseTicketTest, SalesReportTest |
 | Recintos/mapas y favoritos | VenueController, VenueSeeder, VenueResource; FavoriteController | StoreEventTest, FavoriteTest |
 | Mis Tickets/validación pública | TicketController, TicketResource, Ticket | TicketReadTest, DemoThreeMigrationTest |
@@ -67,8 +68,11 @@ capa adicional de servicios/repositorios. Los recursos usan camelCase e IDs stri
 | PATCH /api/v1/admin/usuarios/{id}/estado | ADMIN | 200: usuario actualizado; 403 cuenta ADMIN; 404 usuario inexistente; 422 estado inválido |
 
 - Registro: fullName, email, password, role, acceptedTerms=true; CLIENT requiere
-  profile.docNumber (DNI string de 8 dígitos); ORGANIZER requiere organizer.taxId
+  profile.docNumber (DNI string de 8 dígitos); ORGANIZER requiere
+  organizer.displayName (nombre de empresa, 2–255 caracteres) y organizer.taxId
   (RUC string de 11 dígitos con prefijo 10/15/17/20). ADMIN no tiene autorregistro.
+  Campos confirmados por el usuario mediante capturas el 2026-10-29, conservando
+  la aceptación de T&C acordada. No ampliar el registro por otros contratos.
 - Password: mínimo 8 caracteres, mayúscula, número y carácter especial; cast hashed.
   Registro activa la cuenta sin confirmación por correo. No hay recuperación de contraseña.
 - Login normaliza email. Cuenta inactiva con contraseña correcta: 403 y
@@ -87,22 +91,30 @@ capa adicional de servicios/repositorios. Los recursos usan camelCase e IDs stri
   No hay alta/eliminación administrativa ni cambios de estado sobre administradores.
 - Logout usa blacklist y caché compartida (database en Render); no desactivar
   JWT_BLACKLIST_ENABLED si se necesita revocación. El navegador debe borrar sus datos.
-- Perfiles opcionales del frontend y marketingOptIn se conservan con lista explícita
-  de campos; detalles en JSON de client_profiles/organizer_profiles. No aceptar roles
-  ni verificationStatus dentro de esos datos. Se mantienen DNI/RUC y permisos.
+- Registro ignora campos adicionales (teléfono, país, género, marketingOptIn,
+  docType, etc.). Solo guarda DNI para CLIENT y RUC/nombre de empresa para ORGANIZER;
+  el nombre de empresa usa organizer_profiles.details.displayName. Registro/login
+  devuelven únicamente los campos acordados, incluso para perfiles históricos.
+  Las columnas details y marketing_opt_in existentes no se eliminan ni se limpian;
+  no se modifican datos históricos ni migraciones por esta corrección.
 
 ## Demo 3: eventos, favoritos y tickets
 
 Contrato vigente: docs/FRONTEND_COMPATIBILITY.md. Entrega anterior registrada en
 docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
 
-- GET /api/v1/recintos (ORGANIZER): 15 recintos y 50 zonas exactos del catálogo
-  Angular en database/data/frontend-venues.json. Aforos de maqueta, nombres exactos,
+- GET /api/v1/recintos (ORGANIZER): 16 recintos y 51 zonas en
+  database/data/frontend-venues.json: 15 recintos originales de Angular más
+  Recinto de prueba (Lima, slug recinto-prueba, una zona General de capacidad 1).
+  VenueSeeder carga el JSON y está incluido en DatabaseSeeder. Ejecutarlo en la
+  base del entorno tras actualizar el código; el pull no actualiza la BD.
+  Aforos de maqueta, nombres exactos,
   slug y geometría auxiliar. No borrar los tres recintos antiguos si ya existen;
   se conservan como históricos y no se muestran en el catálogo nuevo.
 - POST /api/events también recibe EventItem JSON: name, venue string, city,
   zonas con name/capacity/sold=0/price y dos imágenes JPEG Base64 distintas.
   Resuelve recinto/zonas en BD y verifica aforos; el dueño procede del JWT.
+  Admite una o más zonas, exigiendo siempre todas las zonas del recinto seleccionado.
   JSON exige 24 horas de separación; frontend IDs temporales no son IDs de compra.
 - POST /api/events (ORGANIZER activo): multipart con venueId, archivo banner JPEG
   <=2 MiB, mínimo 1920×480/4:1, startsAt futuro y zones[{venueZoneId,basePrice>0}].
@@ -126,12 +138,21 @@ docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
   cardNumber string 13–19 dígitos, cvv string 3–4 dígitos y expiresAt YYYY-MM-DD futuro.
   Aprobación simulada sin guardar tarjeta/CVV; bloquea usuario y zonas por ID.
   Sin aforo: 409, sin cambios parciales. Respuesta {paymentStatus,quantity,totalPrice,tickets}.
+- BUG-008 (2026-10-30): ambas rutas de compra comprueban también un máximo
+  acumulado de 6 entradas confirmadas por usuario y evento, entre todos sus
+  intentos y zonas. Incluye tickets históricos sin orden sumando quantity;
+  las órdenes CANCELADA no consumen cupo. Usuario bloqueado antes de leer
+  el acumulado; exceso devuelve 409 sin nuevas órdenes, tickets ni descuentos.
+  maxPerOrder conserva su significado por intento. Los reintentos idempotentes
+  se resuelven antes del acumulado y devuelven la orden existente.
 - Una entrada = un Ticket con quantity=1, código TICK-año-16hex y snapshots
   inmutables de precio, zona, evento y fecha. GET /api/v1/tickets y .../{id}
   requieren CLIENT y solo retornan propios (ajeno 404).
 - POST /api/orders (CLIENT activo): CreateOrderPayload del frontend, con eventId,
   items, expectedTotal/paymentMethod/paymentResult/idempotencyKey opcionales.
-  Recalcula precios de BD, comisión del 6% y redondeos en centavos; máximo 6.
+  Recalcula precios finales de BD en centavos, sin comisión adicional; máximo 6.
+  Nuevas órdenes: fee=0, tickets service_fee=0 y total=subtotal. No recalcular
+  compras históricas ni sus reintentos idempotentes. Alineado con Angular el 2026-10-30.
   DECLINED causa 402; precio distinto/stock insuficiente 409, sin escrituras parciales.
   Bloquea usuario y zonas en orden estable. Misma clave/payload devuelve orden previa
   con 200; clave reutilizada con otro payload causa 409. Primera creación 201.
@@ -166,6 +187,20 @@ para los roles. INITIAL_ADMIN_NAME/EMAIL/PASSWORD privados crean el admin de for
 idempotente; repetir el seeder no cambia contraseñas. Con los tres vacíos se omite;
 configuración parcial falla. El email se normaliza para poder iniciar sesión.
 
+DatabaseSeeder llama también a DemoDataSeeder: crea las cuentas demo
+cliente@tkt.pe / Cliente1$ (CLIENT) y organizador@tkt.pe / Organizador1$
+(ORGANIZER), con perfiles DNI/RUC, y siembra los 16 eventos de
+database/data/frontend-events.json como PUBLISHED con zonas ligadas al catálogo
+de recintos (zona → venue_zone_id y aforo del recinto). Excepción única: Sabores
+del Perú conserva sus 2 zonas propias sin venue_zone_id y aforos de maqueta
+(8000/1500), porque no existen en Explanada Costa Verde. Las fechas son
+relativas a la siembra: el evento más próximo queda a 7 días conservando los
+intervalos del archivo, para que el catálogo nunca venza. image_url se calcula
+como en el frontend (palabra clave/recinto/categoría con pools Unsplash y fotos
+locales de /events). Idempotente: repetir no duplica ni resetea stock; solo
+AdminUserSeederTest se ajustó por los dos usuarios demo; el ADMIN sigue saliendo
+exclusivamente de INITIAL_ADMIN_*.
+
 Render ejecuta config/route/view cache, migrate --force y db:seed --force.
 Completar INITIAL_ADMIN_* en el panel privado; no inventar credenciales en fuentes.
 La Épica 1 no agregó tablas; Demo 3 requiere las cuatro migraciones 2026_10_25_*,
@@ -197,8 +232,32 @@ aprobados. Cuatro carreras concurrentes en MySQL 8.0.46 aislado aprobadas (últi
 entrada, idempotencia, multizona y cancelación), sin sobreventa ni doble restauración.
 No se probó concurrencia PostgreSQL. No se tocaron las BD habituales ni Render.
 Pint aprobado en los 38 archivos PHP modificados; 34 rutas API registradas.
+El 2026-10-29: registro limitado a los campos confirmados por el usuario y empresa
+obligatoria para ORGANIZER. Suite completa ejecutada directamente con PHPUnit
+en Docker/PHP 8.4.27, sin red y con SQLite en memoria: 242 pruebas y 1318 aserciones
+aprobadas; Pint aprobado en los 7 archivos PHP corregidos. Se verifica el descarte
+de extras y la respuesta de login para perfiles históricos sin cambiar sus datos.
+Sin cambios en frontend, migraciones ni despliegue; no se repitió la integración
+Angular ni las pruebas concurrentes para esta corrección.
+El 2026-10-30, BUG-008: límite acumulado de 6 entradas confirmadas por usuario/evento
+en ambas rutas de compra, conservando el límite de cada intento y los reintentos
+idempotentes. Tickets históricos sin orden incluidos; cancelaciones liberan cupo.
+19 casos nuevos de regresión; suite completa con 262 pruebas y 1474 aserciones
+aprobadas en SQLite en memoria, Docker/PHP 8.4.27 sin red. Pint en los tres PHP
+cambiados aprobado. Cinco carreras en MySQL 8.0.46 temporal con procesos PHP
+distintos y peticiones al kernel HTTP de Laravel aprobadas, sin superar el cupo
+ni duplicar entradas por reintentos. No se probó PostgreSQL. Se retiraron los
+contenedores temporales; no se tocaron frontend, migraciones, despliegue ni BD habitual.
 Registros de entregas: EPIC1_IMPLEMENTATION.md y DEMO3_IMPLEMENTATION.md;
 consultarlos solo para revisar el alcance y los archivos de cada entrega.
+
+Recinto de prueba (2026-10-30): catálogo ampliado a 16 recintos y 51 zonas;
+JSON de eventos admite min:1 en zones. Suite completa de 265 pruebas y 1510
+aserciones aprobadas en Docker/PHP 8.4.27 y SQLite en memoria, sin red;
+Pint aprobado en los tres PHP modificados. Verificados seeding idempotente,
+publicación con General de capacidad 1, detalle público y agotamiento tras
+una sola venta. El seeder del catálogo está incluido en DatabaseSeeder y debe
+ejecutarse en cada base que actualice su código.
 
 Pendientes generales fuera del alcance: CORS explícito, rate limiting y el SQL
 documental antiguo. No instalar paquetes nuevos, tocar producción ni realizar

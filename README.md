@@ -8,17 +8,17 @@ antes de abrir únicamente los archivos del flujo solicitado.
 
 El contrato vigente para **frontend-angular, rama demo3**, está en
 [FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBILITY.md). Incluye eventos JSON,
-dos imágenes Base64, 15 recintos/50 zonas, órdenes e importes con comisión del 6%.
+dos imágenes Base64, 16 recintos/51 zonas, órdenes e importes finales sin comisión adicional.
 La entrega anterior está registrada en [DEMO3_IMPLEMENTATION.md](docs/DEMO3_IMPLEMENTATION.md).
 El multipart y la compra anterior siguen disponibles; para obtener la respuesta
 anterior de eventos se puede usar `?contract=legacy`. Registro/login conservan
-sus rutas y aceptan los detalles opcionales de perfil enviados por Angular.
+sus rutas y usan únicamente los campos de registro confirmados por el usuario.
 
 ## Funciones disponibles
 
 | Método y ruta | Acceso | Función |
 |---|---|---|
-| `POST /api/auth/register` | Público | Registra un cliente con DNI o un organizador con RUC |
+| `POST /api/auth/register` | Público | Registra un cliente con DNI o un organizador con empresa y RUC |
 | `POST /api/auth/login` | Público | Inicia sesión con correo y contraseña |
 | `POST /api/auth/logout` | Cualquier rol autenticado | Invalida el JWT presentado |
 | `GET /api/v1/admin/usuarios` | `ADMIN` | Lista asistentes/organizadores y filtra por rol y estado |
@@ -26,12 +26,12 @@ sus rutas y aceptan los detalles opcionales de perfil enviados por Angular.
 | `GET /api/events` | Público | Lista eventos publicados y futuros |
 | `GET /api/events/{id}` | Público | Consulta un evento |
 | `POST /api/events` | `ORGANIZER` activo | Crea un evento con recinto predefinido, banner y precios por zona |
-| `GET /api/v1/recintos` | `ORGANIZER` | Lista los 15 recintos demostrativos y sus 50 zonas |
+| `GET /api/v1/recintos` | `ORGANIZER` | Lista los 16 recintos demostrativos y sus 51 zonas |
 | `GET /api/v1/eventos/mios` | `ORGANIZER` | Lista solo sus propios eventos |
 | `PUT/PATCH /api/events/{id}` | `ORGANIZER` | Rechaza edición con 403 en Demo 3 |
 | `GET /api/events/{id}/banner` | Público | Entrega el banner JPEG de un evento publicado |
 | `GET/POST/DELETE /api/v1/favoritos` | `CLIENT` | Consulta, agrega o elimina favoritos propios |
-| `POST /api/events/{id}/tickets` | `CLIENT` activo | Compra hasta 6 entradas entre zonas con pago simulado |
+| `POST /api/events/{id}/tickets` | `CLIENT` activo | Compra entradas con pago simulado y máximo acumulado de 6 por usuario/evento |
 | `GET /api/v1/tickets` | `CLIENT` | Lista sus tickets individuales |
 | `GET /api/v1/tickets/{id}` | Cliente propietario | Consulta su propia entrada |
 | `GET /api/v1/tickets/{code}/validacion` | Público | Confirmación de compra sin datos del comprador |
@@ -40,7 +40,7 @@ sus rutas y aceptan los detalles opcionales de perfil enviados por Angular.
 | `GET /api/events/{id}/secondary-banner` | Público | Entrega la segunda imagen JPEG |
 | `GET /api/organizers/{organizerId}/events` | Organizador propietario o `ADMIN` | Lista eventos del organizador |
 | `DELETE /api/events/{id}` | Organizador propietario o `ADMIN` | Elimina solo eventos sin ventas ni órdenes |
-| `POST /api/orders` | `CLIENT` activo | Compra con comisión del 6%, tickets individuales e idempotencia |
+| `POST /api/orders` | `CLIENT` activo | Compra sin comisión adicional, tickets individuales e idempotencia |
 | `GET /api/orders/me` | `CLIENT` | Lista compras propias |
 | `GET /api/orders/{id}` | Cliente propietario o `ADMIN` | Detalle de una compra |
 | `PATCH /api/orders/{id}` | `ADMIN` | Cancela una compra confirmada y restaura stock una sola vez |
@@ -120,9 +120,15 @@ docker compose exec app php artisan migrate --seed
 
 `APP_KEY` y `JWT_SECRET` son privados y permanecen en el `.env` ignorado por Git.
 
-`migrate --seed` crea los roles, carga los 15 recintos y 50 zonas, y crea el
-administrador si se configuró. Repetir el seeder conserva sus credenciales e IDs;
-un correo asignado a otro rol produce un error.
+`migrate --seed` crea los roles, carga los 15 recintos y 50 zonas, crea el
+administrador si se configuró y siembra la data demo: los 16 eventos de
+`database/data/frontend-events.json` con sus zonas, aforos e imágenes, más las
+cuentas `cliente@tkt.pe` / `Cliente1$` (`CLIENT`) y `organizador@tkt.pe` /
+`Organizador1$` (`ORGANIZER`), las mismas credenciales de demo del frontend.
+Las fechas se siembran relativas: el evento más próximo queda a 7 días y se
+conservan los intervalos del archivo, así la demo nunca vence. Repetir el
+seeder conserva sus credenciales e IDs; un correo asignado a otro rol produce
+un error.
 
 ### Comprobar el servicio y sus puertos
 
@@ -144,8 +150,9 @@ curl.exe -f http://localhost:8080/up
 Invoke-RestMethod -Uri http://localhost:8080/api/events
 ```
 
-En Bash puede usarse `curl -f http://localhost:8080/up`. El catálogo devuelve
-`[]` hasta que se publiquen eventos futuros. El cliente HTTP utiliza
+En Bash puede usarse `curl -f http://localhost:8080/up`. Tras el primer
+`migrate --seed`, `GET /api/events` devuelve los 16 eventos demo con fechas
+futuras; sin datos publicados devuelve `[]`. El cliente HTTP utiliza
 `http://localhost:8080/api` como base; CORS conserva la configuración de Laravel.
 
 ### Arranques posteriores y actualización de una base existente
@@ -164,6 +171,25 @@ recrear `app` con `docker compose up -d --no-deps --force-recreate app`. Si se
 agregan los datos del administrador después del primer arranque, ejecutar luego
 `docker compose exec app php artisan db:seed`.
 
+### Cargar el recinto de prueba después de actualizar el código
+
+El catálogo versionado incluye **Recinto de prueba**, en Lima, con una sola zona
+**General** de capacidad **1**. La creación de eventos admite una o más zonas,
+siempre que sean todas las zonas del recinto y coincidan sus aforos.
+El catálogo completo tiene 16 recintos y 51 zonas.
+
+Después de hacer pull, con el entorno Docker ya levantado, cargar el catálogo
+en la base de ese integrante sin reconstruirla ni borrar datos:
+
+```bash
+docker compose exec app php artisan db:seed --class=VenueSeeder
+```
+
+`DatabaseSeeder` ya incluye `VenueSeeder`; el comando habitual
+`php artisan migrate --seed` también lo carga. En Render, el script de arranque
+ejecuta `php artisan db:seed --force` con el catálogo de la versión desplegada.
+El pull actualiza el JSON; cada base se actualiza cuando se ejecuta el seeder.
+
 Para detener los servicios conservando los datos de MySQL:
 
 ```bash
@@ -175,22 +201,23 @@ el esquema mediante migraciones aditivas; no requiere reconstruir la base.
 
 ## Registro
 
-`POST /api/auth/register` requiere `fullName`, `email`, `password`, `role`, `acceptedTerms` y el documento del perfil correspondiente. `role` solo admite `CLIENT` u `ORGANIZER`. `acceptedTerms` debe llegar como el booleano JSON `true` (HU-06); si falta, es falso o tiene otro tipo (por ejemplo, `"true"`, `"yes"`, `"on"` o `1`), el registro se rechaza con `422` y no se crea ningún registro.
+`POST /api/auth/register` requiere `fullName`, `email`, `password`, `role`, `acceptedTerms` y los campos del perfil correspondiente indicados abajo. `role` solo admite `CLIENT` u `ORGANIZER`. `acceptedTerms` debe llegar como el booleano JSON `true` (HU-06); si falta, es falso o tiene otro tipo (por ejemplo, `"true"`, `"yes"`, `"on"` o `1`), el registro se rechaza con `422` y no se crea ningún registro.
 
-### Campos requeridos y opcionales
+### Campos aceptados
 
-| Parte del registro | Requeridos | Opcionales compatibles con Angular |
-|---|---|---|
-| Ambos roles | `fullName`, `email`, `password`, `role` y `acceptedTerms=true` | `marketingOptIn` booleano |
-| Usuario (`CLIENT`) | `profile.docNumber`: DNI de 8 dígitos | `profile.docType=DNI`, `country`, `city`, `district`, `hasPeruvianNationality`, `gender`, `phoneCode` y `phone` |
-| Organizador (`ORGANIZER`) | `organizer.taxId`: RUC de 11 dígitos | `organizer.orgType`, `displayName`, `legalName`, `repName`, `phone`, `country`, `city` y `website` |
+| Parte del registro | Requeridos |
+|---|---|
+| Ambos roles | `fullName`, `email`, `password`, `role` y `acceptedTerms=true` |
+| Asistente (`CLIENT`) | `profile.docNumber`: DNI de 8 dígitos |
+| Organizador (`ORGANIZER`) | `organizer.displayName`: nombre de la empresa (2–255 caracteres); `organizer.taxId`: RUC de 11 dígitos |
 
-El registro mínimo sigue siendo **nombre, correo, contraseña y DNI** si es
-cliente, o **nombre, correo, contraseña y RUC** si es organizador, además del rol
-y la aceptación de términos. Los detalles opcionales reconocidos se conservan en
-`client_profiles.details` u `organizer_profiles.details` y se devuelven en el
-perfil de registro/login. `marketingOptIn` se guarda si se proporciona.
-La aceptación de términos queda registrada en `users.terms_accepted_at`.
+Estos son los campos confirmados por el usuario mediante las capturas del
+2026-10-29, junto con la aceptación obligatoria de términos ya acordada.
+Los campos adicionales se ignoran: teléfono/prefijo, país, ciudad, género,
+docType, marketingOptIn y otros detalles no se guardan ni se devuelven en
+registro/login. El nombre de empresa usa `organizer_profiles.details.displayName`.
+La aceptación de términos queda registrada en `users.terms_accepted_at`. No se
+eliminan columnas ni datos históricos; tampoco se devuelven esos detalles extra.
 
 Cliente (`CLIENT`):
 
@@ -214,14 +241,15 @@ Organizador (`ORGANIZER`):
   "password": "Secret123!",
   "role": "ORGANIZER",
   "acceptedTerms": true,
-  "organizer": { "taxId": "20123456789" }
+  "organizer": { "displayName": "Eventos SAC", "taxId": "20123456789" }
 }
 ```
 
 El DNI debe ser una **cadena de 8 dígitos** y el RUC una **cadena de 11 dígitos** que comience por `10`, `15`, `17` o `20`. Enviarlos como cadenas conserva los ceros iniciales. El backend comprueba el formato del RUC, pero no consulta SUNAT. La contraseña requiere al menos 8 caracteres, una mayúscula, un número y un carácter especial.
 
-`profile.docType` admite `DNI` y se conserva si se proporciona. No se aceptan CE,
-pasaporte ni DNI como documento de organizador. Los campos no reconocidos no se
+El documento del asistente siempre es un DNI; docType no forma parte del contrato.
+No se aceptan números de CE, pasaporte ni DNI como RUC de organizador.
+Los campos no reconocidos no se
 persisten; en particular, `role_id`, `active` y `verificationStatus` enviados por
 el cliente no permiten cambiar privilegios ni el estado de la cuenta.
 
@@ -240,19 +268,25 @@ El usuario y su perfil se crean en una transacción. La respuesta `201` contiene
 }
 ```
 
-El perfil del organizador aparece en `user.organizer.taxId`. La respuesta no incluye contraseña ni columnas internas. Los conflictos por correo, DNI o RUC duplicados devuelven `409`; los datos requeridos o formatos inválidos devuelven `422`. Los tres valores tienen índices únicos en MySQL.
+El perfil del organizador aparece en `user.organizer.displayName` y
+`user.organizer.taxId`. Las cuentas antiguas sin nombre de empresa pueden iniciar
+sesión; en ese caso displayName es null. La respuesta no incluye contraseña ni
+columnas internas. Los conflictos por correo, DNI o RUC duplicados devuelven `409`;
+los datos requeridos o formatos inválidos devuelven `422`. Los tres valores tienen
+índices únicos en MySQL.
 
 ### Casos de éxito y error del registro
 
 | Caso | HTTP | Resultado |
 |---|---|---|
 | Cliente con campos válidos, DNI disponible y T&C aceptados | `201` | Crea usuario y perfil; devuelve `token` y `user.profile.docNumber` |
-| Organizador con campos válidos, RUC disponible y T&C aceptados | `201` | Crea usuario y perfil; devuelve `token` y `user.organizer.taxId` |
+| Organizador con empresa válida, RUC disponible y T&C aceptados | `201` | Crea usuario y perfil; devuelve `token`, `user.organizer.displayName` y `user.organizer.taxId` |
 | Correo ya registrado, incluso con distintas mayúsculas | `409` | `{"message":"El correo ya está registrado."}` |
 | DNI ya registrado | `409` | `{"message":"Ese documento ya está registrado."}` |
 | RUC ya registrado | `409` | `{"message":"Ese RUC ya está registrado."}` |
 | Duplicado detectado por el índice de la BD durante la inserción | `409` | `{"message":"Ese dato ya está registrado."}` |
 | Nombre ausente, de menos de 2 caracteres o de más de 255 | `422` | Error de validación en `fullName` |
+| Empresa ausente, vacía, de menos de 2 caracteres o de más de 255 | `422` | Error de validación en `organizer.displayName` |
 | Correo ausente, inválido o de más de 255 caracteres | `422` | Error de validación en `email` |
 | Contraseña ausente o que incumple algún requisito | `422` | Error de validación en `password` |
 | Rol ausente, `ADMIN` o cualquier valor distinto de `CLIENT`/`ORGANIZER` | `422` | Error de validación en `role` |
@@ -273,6 +307,11 @@ Los registros rechazados por validación o duplicados no crean un usuario ni un 
 ```
 
 Devuelve `200` con `token` y `user` en la misma forma que el registro. Las credenciales incorrectas devuelven `401`; una cuenta inactiva con contraseña correcta devuelve `403`; una solicitud inválida devuelve `422`.
+
+La siembra inicial crea dos cuentas de prueba con las credenciales del frontend:
+`cliente@tkt.pe` / `Cliente1$` (`CLIENT`) y `organizador@tkt.pe` /
+`Organizador1$` (`ORGANIZER`). El administrador nace de las variables privadas
+`INITIAL_ADMIN_*` y no se versiona su contraseña.
 
 El login está disponible para cuentas activas `CLIENT`, `ORGANIZER` y `ADMIN`. El correo se normaliza a minúsculas. Un correo inexistente y una contraseña incorrecta reciben el mismo cuerpo de error, sin token ni datos del usuario:
 
@@ -384,11 +423,24 @@ Para verificar BUG-004 / TC-EXP-002, utiliza `GET /api/events/{id}/sales-report`
 | `GET /api/events` | `200`: EventItem compatible con Angular, zonas, imágenes y campos de apoyo; `[]` si no hay coincidencias | `422` si los filtros son inválidos. Admite search, category, available, venue y date (`YYYY-MM-DD`, día calendario de Lima) |
 | `GET /api/events/{id}` | `200`: datos de un evento publicado y sus zonas | `404`: `{"message":"Evento no disponible"}` si no existe o no está publicado |
 | `POST /api/events` | `201`: evento publicado; admite JSON con dos imágenes Base64 o multipart anterior | `401` sin JWT; `403` por rol/cuenta inactiva; `422` por datos/imágenes inválidos; `409` por separación menor de 24 horas en JSON o mismo día de Lima en multipart |
-| `POST /api/events/{id}/tickets` | `201`: paymentStatus, quantity, totalPrice y array tickets; un ticket por entrada | `401` sin JWT; `403` por rol/cuenta inactiva; `404` evento no disponible; `422` por pago/zona inválidos o total superior a 6; `409` por aforo insuficiente |
-| `POST /api/orders` | `201`: orden con líneas, tickets, subtotal, comisión del 6% y total; `200` en reintento idéntico | `402` pago simulado rechazado; `409` precio/stock/clave incompatibles; `422` formato, zonas o cantidades inválidos; `401/403` por autenticación/permisos |
+| `POST /api/events/{id}/tickets` | `201`: paymentStatus, quantity, totalPrice y array tickets; un ticket por entrada | `401` sin JWT; `403` por rol/cuenta inactiva; `404` evento no disponible; `422` por pago/zona inválidos o cantidad por intento superior al límite; `409` por aforo insuficiente o exceso acumulado por usuario/evento |
+| `POST /api/orders` | `201`: orden con líneas, tickets, subtotal, fee=0 y total sin recargo; `200` en reintento idéntico | `402` pago simulado rechazado; `409` precio/stock/clave incompatibles o exceso acumulado por usuario/evento; `422` formato, zonas o cantidades inválidos; `401/403` por autenticación/permisos |
 | `GET /api/events/{id}/sales-report` | `200`: devuelve `event`, `summary` y `zones`; los totales de ventas e ingresos son cero si no hubo ventas | `401` sin token válido; `403` si no es organizador o no es dueño del evento; `404` si el evento no existe |
 
 En la compra, el error `409` devuelve `{"message":"Aforo insuficiente para la cantidad solicitada"}`. Consultar el reporte de un evento ajeno devuelve `403` con `{"message":"No tienes permiso para consultar este reporte."}`. Una compra rechazada no descuenta cupos ni crea entradas parcialmente.
+
+BUG-008: un usuario puede tener como máximo **6 entradas confirmadas del mismo
+evento**, sumando todas sus compras y zonas por cualquiera de las dos rutas.
+Se cuentan también las entradas históricas sin orden; las canceladas no consumen
+cupo. Las compras de otros usuarios o de otros eventos tienen cupos independientes.
+Por ejemplo, después de comprar 4 entradas puede comprar otras 2; una tercera
+compra de 1 se rechaza con `409` y el mensaje
+`La compra supera el máximo de 6 entradas por usuario para este evento.`
+No se crean órdenes/tickets ni se descuenta stock al rechazarla.
+`maxPerOrder` sigue limitando cada intento, además del máximo acumulado.
+Un reintento idéntico de una orden existente devuelve esa misma orden con `200`
+incluso al haber alcanzado el cupo; no emite entradas adicionales. Las cuentas y
+zonas se bloquean para evitar que intentos simultáneos excedan el límite.
 
 ### Formato de los errores de validación
 
@@ -400,9 +452,9 @@ Las migraciones de creación (`0001_01_01_000003` a `000005`) crean las tablas d
 
 | Tabla | Columnas de negocio |
 |---|---|
-| `users` | `full_name`, `email`, `password`, `role_id`, `active`, `terms_accepted_at`, `marketing_opt_in` opcional |
-| `client_profiles` | `user_id`, `doc_number` (DNI), `details` JSON opcional |
-| `organizer_profiles` | `user_id`, `tax_id` (RUC), `details` JSON opcional |
+| `users` | `full_name`, `email`, `password`, `role_id`, `active`, `terms_accepted_at`; `marketing_opt_in` conservado para datos históricos, fuera del registro |
+| `client_profiles` | `user_id`, `doc_number` (DNI); `details` JSON histórico, sin nuevas escrituras en el registro |
+| `organizer_profiles` | `user_id`, `tax_id` (RUC), `details` JSON con `displayName` (empresa) para registros nuevos |
 
 Las tablas también incluyen sus claves primarias y marcas de tiempo. `role_id`
 y `user_id` son claves foráneas; `users.email`, `client_profiles.doc_number` y
@@ -432,8 +484,8 @@ docker compose exec app php artisan test
 
 | Archivo | Cobertura |
 |---|---|
-| `tests/Feature/RegisterTest.php` | Registro de ambos roles, cada requisito de contraseña, aceptación estricta de T&C, documentos inválidos, duplicados, bloqueo de `ADMIN` y protección frente a manipulación del payload |
-| `tests/Feature/LoginTest.php` | Login correcto de los tres roles, credenciales incorrectas, cuentas inactivas, entradas inválidas, JWT firmado con identificador y rol sin datos personales, e intento de modificar el rol desde el payload |
+| `tests/Feature/RegisterTest.php` | Registro de ambos roles, empresa obligatoria para organizadores, campos adicionales ignorados, cada requisito de contraseña, aceptación estricta de T&C, documentos inválidos, duplicados, bloqueo de `ADMIN` y protección frente a manipulación del payload |
+| `tests/Feature/LoginTest.php` | Login correcto de los tres roles, exclusión de detalles históricos fuera del contrato, credenciales incorrectas, cuentas inactivas, entradas inválidas, JWT firmado con identificador y rol sin datos personales, e intento de modificar el rol desde el payload |
 | `tests/Feature/RegistrationMigrationTest.php` | Columnas del esquema final, índices únicos, claves foráneas y unicidad de DNI/RUC en la base de pruebas |
 | `tests/Feature/RoleMiddlewareTest.php` | Acceso permitido y rechazos `401` sin token y `403` con rol no autorizado |
 | `tests/Feature/SessionSecurityTest.php` | Sesiones abiertas válidas tras desactivar hasta el vencimiento, duración configurable en minutos, acceso antes/rechazo después de expirar y catálogo público |
@@ -443,11 +495,19 @@ docker compose exec app php artisan test
 | `tests/Feature/StoreEventTest.php` | Recintos/mapas, banners, fechas de Lima, publicación atómica, permisos, inmutabilidad y Mis Eventos |
 | `tests/Feature/FavoriteTest.php` | Favoritos propios, idempotencia, índice único y catálogo personalizado |
 | `tests/Feature/PurchaseTicketTest.php` | Pago simulado, máximo 6, varias zonas, aforo, rollback y tickets individuales |
+| `tests/Feature/PurchaseLimitTest.php` | BUG-008: máximo acumulado por usuario/evento en ambas rutas, compras parciales, distintas zonas, cancelaciones, tickets históricos y reintentos idempotentes |
 | `tests/Feature/TicketReadTest.php` | Propiedad de entradas, snapshots inmutables y confirmación pública sin datos personales |
 | `tests/Feature/DemoThreeMigrationTest.php` | Migraciones reversibles e individualización de ventas antiguas conservando códigos/importes/stock |
-| `tests/Feature/FrontendCompatibilityTest.php` | JSON/imágenes, catálogos, filtros, órdenes, comisión, idempotencia, permisos, cancelación, rollback e importación histórica |
+| `tests/Feature/FrontendCompatibilityTest.php` | JSON/imágenes, catálogos, filtros, órdenes sin recargo, idempotencia, permisos, cancelación, rollback e importación histórica |
 
-Última verificación del backend: **235 pruebas y 1286 aserciones aprobadas**.
+Última verificación del backend (2026-10-30): **265 pruebas y 1510 aserciones
+aprobadas** con PHPUnit en Docker/PHP 8.4.27 y SQLite en memoria, sin red.
+Incluye la carga idempotente del nuevo recinto, publicación JSON con una sola
+zona, consulta pública y rechazo de una segunda venta al agotarse la única entrada.
+BUG-008 agrega 19 casos de regresión y se comprobó además con cinco carreras
+en MySQL 8.0.46 temporal, en procesos PHP separados, sin exceder el cupo.
+Pint aprobado en los tres archivos PHP corregidos. No se probó concurrencia
+en PostgreSQL ni se modificaron las bases habituales.
 La comprobación aislada con servicios Angular y las carreras concurrentes en
 MySQL están registradas en [FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBILITY.md).
 
@@ -455,7 +515,8 @@ MySQL están registradas en [FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBIL
 
 `render.yaml` define el servicio Docker y PostgreSQL. `bin/deploy.sh` cachea
 configuración/rutas/vistas, aplica migraciones y ejecuta `DatabaseSeeder`, que
-siembra los roles y la cuenta administradora configurada de manera idempotente.
+siembra los roles, la cuenta administradora configurada, los recintos y la data
+demo (eventos y usuarios `CLIENT`/`ORGANIZER`) de manera idempotente.
 En el panel privado de Render, completar `INITIAL_ADMIN_NAME`,
 `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD`; las tres vacías omiten el admin,
 y una configuración parcial detiene el seeding. No poner credenciales en Git.

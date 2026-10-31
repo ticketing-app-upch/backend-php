@@ -1,5 +1,7 @@
 # AGENTS.md — backend-php
 
+Actualizado: 2026-10-30.
+
 ## Entrada rápida
 
 Lee `docs/PROJECT_CONTEXT.md` una vez al iniciar. Contiene el mapa del proyecto,
@@ -42,24 +44,44 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
 - Demo 3: contrato Angular `demo3` documentado en docs/FRONTEND_COMPATIBILITY.md.
   POST /api/events admite EventItem JSON con imágenes JPEG Base64 y el multipart
   anterior con venueId/banner/venueZoneId. Los aforos se validan contra el recinto.
+  Ambos formatos admiten una sola zona, pero deben incluir todas las del recinto.
   JSON exige 24 horas entre eventos; multipart conserva el día calendario de Lima.
   GET /api/events responde al frontend; `?contract=legacy` conserva el formato previo.
   Los endpoints v1 de eventos/favoritos mantienen su formato anterior.
   Publicación directa e inmutabilidad. Solo se eliminan eventos sin historial.
-- Compras: pago simulado, máximo 6 entre todas las zonas y un Ticket por entrada.
-  Bloquear filas de zonas en orden estable y guardar snapshots inmutables.
-- /api/orders agrupa tickets, calcula comisión del 6% en centavos e idempotencia
+- Compras: pago simulado y máximo acumulado de 6 entradas confirmadas por usuario
+  y evento entre todas las zonas, intentos y rutas de compra (BUG-008, 2026-10-30).
+  Aplicar el mismo control en POST /api/orders y POST /api/events/{id}/tickets.
+  Sumar quantity, incluidos tickets históricos sin orden; excluir órdenes CANCELADA,
+  que liberan cupo. Otros usuarios y otros eventos tienen cupos independientes.
+  Bloquear primero el usuario, comprobar el acumulado y después bloquear zonas
+  en orden estable; un Ticket por entrada y snapshots inmutables. Exceso acumulado:
+  409 sin escrituras. maxPerOrder sigue siendo un límite adicional por intento.
+  Resolver reintentos idempotentes antes del control acumulado; nunca reemitir tickets.
+- /api/orders agrupa tickets con precios finales sin comisión e idempotencia
   persistente por usuario. Reintento idéntico 200; clave con otro payload 409.
   Cancelación solo ADMIN: restaurar stock una vez y rechazar validación pública.
+  Nuevas compras: fee y service_fee son 0; total = suma de entradas en centavos.
+  Conservar importes/comisiones históricas y respuestas de reintentos previos.
   El endpoint anterior de compra mantiene su pago/importe sin comisión.
-- Catálogo: 15 recintos y 50 zonas en database/data/frontend-venues.json. No borrar
-  recintos históricos ni cambiar IDs/nombres de zonas que tengan ventas.
+- Catálogo: 16 recintos y 51 zonas en database/data/frontend-venues.json:
+  los 15 originales y Recinto de prueba (Lima, una zona General, capacidad 1).
+  VenueSeeder está incluido en DatabaseSeeder; cargarlo tras actualizar el código
+  con php artisan db:seed --class=VenueSeeder en el entorno correspondiente.
+  No borrar recintos históricos ni cambiar IDs/nombres de zonas con ventas.
 - Cotización Demo 3: /api/v1/dynamic-price devuelve precio base de BD. También
   /pricing/api/v1/dynamic-price; el puerto local 8000 sirve el mismo backend.
   No implementar reglas dinámicas de Demo 4 ni confiar en precios del cliente.
 - Banners en event_banners (DB); el catálogo nunca debe cargar su contenido.
-- Registro conserva detalles opcionales del perfil en JSON con lista explícita
-  de campos; nunca persistir roles/verificationStatus enviados dentro del perfil.
+- Registro limitado a los campos confirmados por el usuario el 2026-10-29:
+  fullName, email, password, role y acceptedTerms=true; CLIENT requiere
+  profile.docNumber (DNI) y ORGANIZER organizer.displayName (empresa) y taxId (RUC).
+  Ignorar campos adicionales; no guardar teléfono, país, género, marketingOptIn
+  ni otros detalles del formulario. Respuestas de registro/login con lista
+  explícita de esos campos; no devolver detalles históricos fuera del contrato.
+  El nombre de empresa se guarda en organizer_profiles.details.displayName.
+  Conservar columnas/datos históricos; no reescribir migraciones ni ampliar
+  el registro al adaptar otros contratos del frontend.
 - Detalle de contratos/migraciones Demo 3: docs/DEMO3_IMPLEMENTATION.md. No agregar
   cola, anti-scalping, correos ni aprobación/edición de rechazados (Demo 4).
 
@@ -94,6 +116,25 @@ efímera aislada, como las documentadas en docs/FRONTEND_COMPATIBILITY.md.
 `vendor/` se instala desde composer.lock. No actualizar dependencias por rutina.
 Verificación excepcional con PHP portátil solo cuando el usuario la autorice;
 no convertirla en un nuevo requisito del proyecto ni versionar el runtime.
+
+### Regresión BUG-008
+
+Código: OrderController::store y EventController::purchaseTickets.
+Pruebas: tests/Feature/PurchaseLimitTest.php (19 casos). Deben cubrir compras
+sucesivas y parciales, rutas alternadas, distintas zonas, cupos independientes,
+cancelaciones, quantity histórico y reintentos idempotentes al alcanzar el límite.
+
+```bash
+docker compose exec app php artisan test --filter=PurchaseLimitTest
+docker compose exec app php artisan test
+```
+
+Verificación del 2026-10-30: 262 pruebas y 1474 aserciones aprobadas en Docker/PHP
+8.4.27 con SQLite en memoria; Pint aprobado en los tres archivos PHP cambiados.
+Cinco escenarios concurrentes aprobados con MySQL 8.0.46 efímero y procesos PHP
+separados, sin superar seis entradas ni duplicarlas en reintentos. No se probó
+concurrencia PostgreSQL. El arnés y la base temporal se retiraron; detalles en
+docs/FRONTEND_COMPATIBILITY.md. No inferir una prueba de despliegue o de la BD real.
 
 ## Límites y seguridad
 
