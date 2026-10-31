@@ -31,7 +31,8 @@ class AdminUserSeederTest extends TestCase
         $this->seed(DatabaseSeeder::class);
 
         $this->assertDatabaseCount('roles', 3);
-        $this->assertDatabaseCount('users', 0);
+        $this->assertDatabaseCount('users', 2);
+        $this->assertSame(0, User::whereHas('role', fn ($roles) => $roles->where('name', 'ADMIN'))->count());
     }
 
     public function test_seeding_creates_an_admin_and_does_not_reset_it_on_repeat(): void
@@ -44,7 +45,7 @@ class AdminUserSeederTest extends TestCase
 
         $this->seed(DatabaseSeeder::class);
 
-        $user = User::sole();
+        $user = User::where('email', 'admin@example.com')->sole();
         $this->assertSame('ADMIN', $user->role->name);
         $this->assertSame('Administradora Inicial', $user->full_name);
         $this->assertTrue($user->active);
@@ -53,8 +54,8 @@ class AdminUserSeederTest extends TestCase
         config(['initial_admin.password' => 'Another123!']);
         $this->seed(DatabaseSeeder::class);
 
-        $this->assertDatabaseCount('users', 1);
-        $this->assertTrue(Hash::check('Secure123!', User::sole()->password));
+        $this->assertDatabaseCount('users', 3);
+        $this->assertTrue(Hash::check('Secure123!', User::where('email', 'admin@example.com')->sole()->password));
     }
 
     public function test_seeding_rejects_an_email_that_belongs_to_another_role(): void
@@ -94,7 +95,7 @@ class AdminUserSeederTest extends TestCase
         config(['initial_admin.email' => 'admin@example.com']);
         $this->seed(DatabaseSeeder::class);
 
-        $this->assertDatabaseCount('users', 1);
+        $this->assertDatabaseCount('users', 3);
         $this->postJson('/api/auth/login', [
             'email' => 'admin@example.com', 'password' => 'Secure123!',
         ])->assertOk()->assertJsonPath('user.role', 'ADMIN');

@@ -46,6 +46,7 @@ y limpieza del navegador corresponden a Angular y no se verifican aquí.
 | Administración de usuarios | AdminUserController, Requests/Admin, AdminUserResource | AdminUserManagementTest |
 | JWT y roles | config/auth.php, config/jwt.php, EnsureUserHasRole, bootstrap/app.php | SessionSecurityTest, RoleMiddlewareTest, ApiAuthenticationFailureTest |
 | Administrador inicial | AdminUserSeeder, DatabaseSeeder, config/initial_admin.php | AdminUserSeederTest |
+| Datos demo (eventos/usuarios) | DemoDataSeeder, database/data/frontend-events.json | DemoDataSeederTest |
 | Catálogo/creación/compra/reporte | EventController, Requests/Event, Resources de eventos/tickets/ventas | IndexEventTest, StoreEventTest, PurchaseTicketTest, SalesReportTest |
 | Recintos/mapas y favoritos | VenueController, VenueSeeder, VenueResource; FavoriteController | StoreEventTest, FavoriteTest |
 | Mis Tickets/validación pública | TicketController, TicketResource, Ticket | TicketReadTest, DemoThreeMigrationTest |
@@ -173,6 +174,20 @@ Setup y comandos completos en README. En Docker: migrate --seed es obligatorio
 para los roles. INITIAL_ADMIN_NAME/EMAIL/PASSWORD privados crean el admin de forma
 idempotente; repetir el seeder no cambia contraseñas. Con los tres vacíos se omite;
 configuración parcial falla. El email se normaliza para poder iniciar sesión.
+
+DatabaseSeeder llama también a DemoDataSeeder: crea las cuentas demo
+cliente@tkt.pe / Cliente1$ (CLIENT) y organizador@tkt.pe / Organizador1$
+(ORGANIZER), con perfiles DNI/RUC, y siembra los 16 eventos de
+database/data/frontend-events.json como PUBLISHED con zonas ligadas al catálogo
+de recintos (zona → venue_zone_id y aforo del recinto). Excepción única: Sabores
+del Perú conserva sus 2 zonas propias sin venue_zone_id y aforos de maqueta
+(8000/1500), porque no existen en Explanada Costa Verde. Las fechas son
+relativas a la siembra: el evento más próximo queda a 7 días conservando los
+intervalos del archivo, para que el catálogo nunca venza. image_url se calcula
+como en el frontend (palabra clave/recinto/categoría con pools Unsplash y fotos
+locales de /events). Idempotente: repetir no duplica ni resetea stock; solo
+AdminUserSeederTest se ajustó por los dos usuarios demo; el ADMIN sigue saliendo
+exclusivamente de INITIAL_ADMIN_*.
 
 Render ejecuta config/route/view cache, migrate --force y db:seed --force.
 Completar INITIAL_ADMIN_* en el panel privado; no inventar credenciales en fuentes.

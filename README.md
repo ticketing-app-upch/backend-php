@@ -120,9 +120,15 @@ docker compose exec app php artisan migrate --seed
 
 `APP_KEY` y `JWT_SECRET` son privados y permanecen en el `.env` ignorado por Git.
 
-`migrate --seed` crea los roles, carga los 15 recintos y 50 zonas, y crea el
-administrador si se configuró. Repetir el seeder conserva sus credenciales e IDs;
-un correo asignado a otro rol produce un error.
+`migrate --seed` crea los roles, carga los 15 recintos y 50 zonas, crea el
+administrador si se configuró y siembra la data demo: los 16 eventos de
+`database/data/frontend-events.json` con sus zonas, aforos e imágenes, más las
+cuentas `cliente@tkt.pe` / `Cliente1$` (`CLIENT`) y `organizador@tkt.pe` /
+`Organizador1$` (`ORGANIZER`), las mismas credenciales de demo del frontend.
+Las fechas se siembran relativas: el evento más próximo queda a 7 días y se
+conservan los intervalos del archivo, así la demo nunca vence. Repetir el
+seeder conserva sus credenciales e IDs; un correo asignado a otro rol produce
+un error.
 
 ### Comprobar el servicio y sus puertos
 
@@ -144,8 +150,9 @@ curl.exe -f http://localhost:8080/up
 Invoke-RestMethod -Uri http://localhost:8080/api/events
 ```
 
-En Bash puede usarse `curl -f http://localhost:8080/up`. El catálogo devuelve
-`[]` hasta que se publiquen eventos futuros. El cliente HTTP utiliza
+En Bash puede usarse `curl -f http://localhost:8080/up`. Tras el primer
+`migrate --seed`, `GET /api/events` devuelve los 16 eventos demo con fechas
+futuras; sin datos publicados devuelve `[]`. El cliente HTTP utiliza
 `http://localhost:8080/api` como base; CORS conserva la configuración de Laravel.
 
 ### Arranques posteriores y actualización de una base existente
@@ -281,6 +288,11 @@ Los registros rechazados por validación o duplicados no crean un usuario ni un 
 ```
 
 Devuelve `200` con `token` y `user` en la misma forma que el registro. Las credenciales incorrectas devuelven `401`; una cuenta inactiva con contraseña correcta devuelve `403`; una solicitud inválida devuelve `422`.
+
+La siembra inicial crea dos cuentas de prueba con las credenciales del frontend:
+`cliente@tkt.pe` / `Cliente1$` (`CLIENT`) y `organizador@tkt.pe` /
+`Organizador1$` (`ORGANIZER`). El administrador nace de las variables privadas
+`INITIAL_ADMIN_*` y no se versiona su contraseña.
 
 El login está disponible para cuentas activas `CLIENT`, `ORGANIZER` y `ADMIN`. El correo se normaliza a minúsculas. Un correo inexistente y una contraseña incorrecta reciben el mismo cuerpo de error, sin token ni datos del usuario:
 
@@ -464,7 +476,8 @@ MySQL están registradas en [FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBIL
 
 `render.yaml` define el servicio Docker y PostgreSQL. `bin/deploy.sh` cachea
 configuración/rutas/vistas, aplica migraciones y ejecuta `DatabaseSeeder`, que
-siembra los roles y la cuenta administradora configurada de manera idempotente.
+siembra los roles, la cuenta administradora configurada, los recintos y la data
+demo (eventos y usuarios `CLIENT`/`ORGANIZER`) de manera idempotente.
 En el panel privado de Render, completar `INITIAL_ADMIN_NAME`,
 `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD`; las tres vacías omiten el admin,
 y una configuración parcial detiene el seeding. No poner credenciales en Git.

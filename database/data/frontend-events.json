@@ -1,0 +1,387 @@
+[
+  {
+    "name": "Sporting Cristal vs Universitario — Fútbol",
+    "description": "El derbi más esperado de la temporada. Dos hinchadas, un estadio lleno y noventa minutos de tensión. Incluye acceso a la fan zone dos horas antes del pitazo inicial.",
+    "category": "DEPORTE",
+    "venue": "Estadio Monumental",
+    "city": "Lima",
+    "startsAt": "2026-11-04T15:00:00-05:00",
+    "maxPerOrder": 4,
+    "zones": [
+      {
+        "name": "Occidente Lateral A",
+        "price": 190
+      },
+      {
+        "name": "Occidente Central B",
+        "price": 250
+      },
+      {
+        "name": "Occidente Central C",
+        "price": 260
+      },
+      {
+        "name": "Butaca Negra",
+        "price": 560
+      },
+      {
+        "name": "Occidente Central D",
+        "price": 260
+      },
+      {
+        "name": "Occidente Central E",
+        "price": 250
+      },
+      {
+        "name": "Occidente Lateral F",
+        "price": 190
+      },
+      {
+        "name": "Oriente",
+        "price": 150
+      },
+      {
+        "name": "Norte",
+        "price": 70
+      },
+      {
+        "name": "Tribuna Familiar Sur",
+        "price": 120
+      }
+    ]
+  },
+  {
+    "name": "Vóley: Perú vs Brasil",
+    "description": "Partido amistoso internacional de la selección peruana de vóley femenino rumbo al Sudamericano. Previa con la barra oficial y activaciones para toda la familia.",
+    "category": "DEPORTE",
+    "venue": "Coliseo Eduardo Dibós",
+    "city": "Lima",
+    "startsAt": "2026-11-07T20:00:00-05:00",
+    "maxPerOrder": 4,
+    "zones": [
+      {
+        "name": "Occidente",
+        "price": 150
+      },
+      {
+        "name": "Oriente",
+        "price": 120
+      },
+      {
+        "name": "Populares",
+        "price": 55
+      }
+    ]
+  },
+  {
+    "name": "Cienciano vs Melgar",
+    "description": "Vive una tarde de fútbol con Cienciano y Melgar desde las tribunas del Estadio Nacional. Elige tu zona en el plano y asegura tus entradas.",
+    "category": "DEPORTE",
+    "venue": "Estadio Nacional",
+    "city": "Lima",
+    "startsAt": "2026-11-08T15:00:00-05:00",
+    "maxPerOrder": 6,
+    "zones": [
+      {
+        "name": "Tribuna Norte",
+        "price": 45
+      },
+      {
+        "name": "Oriente",
+        "price": 80
+      },
+      {
+        "name": "Occidente",
+        "price": 120
+      },
+      {
+        "name": "VIP",
+        "price": 240
+      },
+      {
+        "name": "Platinum",
+        "price": 320
+      }
+    ]
+  },
+  {
+    "name": "Noche de Jazz — Trío Callao",
+    "description": "Formato íntimo, aforo reducido. El Trío Callao presenta su nuevo material con arreglos de standards y composiciones propias.",
+    "category": "CONCIERTO",
+    "venue": "Jazz Zone, Miraflores",
+    "city": "Lima",
+    "startsAt": "2026-11-08T21:00:00-05:00",
+    "maxPerOrder": 4,
+    "zones": [
+      {
+        "name": "Mesa",
+        "price": 140
+      },
+      {
+        "name": "Barra",
+        "price": 95
+      }
+    ]
+  },
+  {
+    "name": "Sinfonía bajo las estrellas",
+    "description": "La Orquesta Sinfónica Nacional interpreta a Beethoven y Dvořák en un concierto al aire libre. Una noche de cuerdas, vientos y percusión bajo el cielo de Lima.",
+    "category": "CONCIERTO",
+    "venue": "Parque de la Exposición",
+    "city": "Lima",
+    "startsAt": "2026-11-11T20:00:00-05:00",
+    "maxPerOrder": 6,
+    "zones": [
+      {
+        "name": "Platea",
+        "price": 180
+      },
+      {
+        "name": "Palco",
+        "price": 260
+      },
+      {
+        "name": "Campo",
+        "price": 90
+      }
+    ]
+  },
+  {
+    "name": "La Casa de Bernarda Alba",
+    "description": "El drama de García Lorca en una versión sobria y contundente, con dirección de Chela De Ferrari. Temporada corta, aforo reducido.",
+    "category": "TEATRO",
+    "venue": "Teatro La Plaza",
+    "city": "Lima",
+    "startsAt": "2026-11-14T20:00:00-05:00",
+    "maxPerOrder": 6,
+    "zones": [
+      {
+        "name": "Platea",
+        "price": 110
+      },
+      {
+        "name": "Mezzanine",
+        "price": 80
+      }
+    ]
+  },
+  {
+    "name": "Hamlet — Temporada 2026",
+    "description": "Una puesta en escena contemporánea del clásico de Shakespeare, dirigida por Alonso Alegría. Función única con elenco invitado.",
+    "category": "TEATRO",
+    "venue": "Teatro Municipal",
+    "city": "Lima",
+    "startsAt": "2026-11-17T19:00:00-05:00",
+    "maxPerOrder": 6,
+    "zones": [
+      {
+        "name": "Platea baja",
+        "price": 130
+      },
+      {
+        "name": "Platea alta",
+        "price": 90
+      },
+      {
+        "name": "Galería",
+        "price": 55
+      }
+    ]
+  },
+  {
+    "name": "Noche Electrónica — Arena Perú",
+    "description": "Line-up de house y techno melódico con tres DJ internacionales y B2B de cierre al amanecer. Producción de luces y sonido a cargo del equipo de festivales europeos.",
+    "category": "CONCIERTO",
+    "venue": "Arena 1 — Costa Verde",
+    "city": "Lima",
+    "startsAt": "2026-11-18T22:00:00-05:00",
+    "maxPerOrder": 6,
+    "zones": [
+      {
+        "name": "General",
+        "price": 170
+      },
+      {
+        "name": "VIP",
+        "price": 360
+      }
+    ]
+  },
+  {
+    "name": "Rock en el Parque — Edición Lima",
+    "description": "Seis bandas nacionales e internacionales en un solo escenario. Rock en español, garage y algo de post-punk para cerrar la noche. Puertas abiertas desde las 5 p. m.",
+    "category": "CONCIERTO",
+    "venue": "Estadio San Marcos",
+    "city": "Lima",
+    "startsAt": "2026-11-21T19:00:00-05:00",
+    "maxPerOrder": 6,
+    "zones": [
+      {
+        "name": "Norte",
+        "price": 90
+      },
+      {
+        "name": "Oriente",
+        "price": 140
+      },
+      {
+        "name": "Occidente",
+        "price": 160
+      },
+      {
+        "name": "VIP",
+        "price": 320
+      },
+      {
+        "name": "Platinum",
+        "price": 420
+      }
+    ]
+  },
+  {
+    "name": "Eva Ayllón Sinfónico",
+    "description": "La voz de la música criolla acompañada por orquesta sinfónica completa. Un repaso a cinco décadas de repertorio, con arreglos nuevos e invitados sorpresa.",
+    "category": "CONCIERTO",
+    "venue": "Gran Teatro Nacional",
+    "city": "Lima",
+    "startsAt": "2026-11-25T20:00:00-05:00",
+    "maxPerOrder": 6,
+    "zones": [
+      {
+        "name": "Platea",
+        "price": 210
+      },
+      {
+        "name": "Balcón",
+        "price": 130
+      },
+      {
+        "name": "Galería",
+        "price": 80
+      }
+    ]
+  },
+  {
+    "name": "DevconLima 2026",
+    "description": "La conferencia de desarrollo de software más grande del país: tres tracks simultáneos, talleres prácticos y un after de networking. Charlas sobre arquitectura, IA aplicada y plataformas cloud.",
+    "category": "CONFERENCIA",
+    "venue": "Centro de Convenciones de Lima",
+    "city": "Lima",
+    "startsAt": "2026-11-29T09:00:00-05:00",
+    "maxPerOrder": 3,
+    "zones": [
+      {
+        "name": "General",
+        "price": 220
+      },
+      {
+        "name": "Pro (incluye talleres)",
+        "price": 420
+      }
+    ]
+  },
+  {
+    "name": "Cumbre de Marketing Digital 2026",
+    "description": "Un día completo de charlas sobre performance, marca, IA generativa aplicada a contenido y medición. Speakers de LATAM y casos reales de e-commerce peruano.",
+    "category": "CONFERENCIA",
+    "venue": "The Westin Lima",
+    "city": "Lima",
+    "startsAt": "2026-12-06T09:00:00-05:00",
+    "maxPerOrder": 5,
+    "zones": [
+      {
+        "name": "General",
+        "price": 260
+      },
+      {
+        "name": "Premium (networking)",
+        "price": 520
+      }
+    ]
+  },
+  {
+    "name": "Serenata Criolla — Aniversario de Lima",
+    "description": "Concierto por el aniversario de la ciudad con valses, polcas y festejo. Elenco de música criolla e invitados, al aire libre en el centro histórico.",
+    "category": "CONCIERTO",
+    "venue": "Plaza de Armas de Lima",
+    "city": "Lima",
+    "startsAt": "2026-12-09T19:00:00-05:00",
+    "maxPerOrder": 6,
+    "zones": [
+      {
+        "name": "Platea",
+        "price": 120
+      },
+      {
+        "name": "General",
+        "price": 70
+      }
+    ]
+  },
+  {
+    "name": "Festival Andahuaylas 2026",
+    "description": "Dos escenarios, dieciocho artistas y doce horas de música que cruza cumbia amazónica, electrónica y rock en español. Zona gastronómica con food trucks.",
+    "category": "FESTIVAL",
+    "venue": "Explanada Costa Verde",
+    "city": "Lima",
+    "startsAt": "2026-12-14T14:00:00-05:00",
+    "maxPerOrder": 6,
+    "zones": [
+      {
+        "name": "General",
+        "price": 160
+      },
+      {
+        "name": "VIP",
+        "price": 380
+      },
+      {
+        "name": "Palco Premium",
+        "price": 720
+      }
+    ]
+  },
+  {
+    "name": "Sabores del Perú — Feria Gastronómica",
+    "description": "Más de cien puestos de cocina regional, rueda de negocios para productores y un escenario con música criolla y fusión. Ingreso por horarios para evitar aglomeraciones.",
+    "category": "FESTIVAL",
+    "venue": "Explanada Costa Verde",
+    "city": "Lima",
+    "startsAt": "2026-12-21T12:00:00-05:00",
+    "maxPerOrder": 6,
+    "zones": [
+      {
+        "name": "Entrada general",
+        "price": 45
+      },
+      {
+        "name": "Pase degustación",
+        "price": 130
+      }
+    ],
+    "nota": "zonas fuera del catálogo de recintos (Explanada Costa Verde solo tiene General/VIP/Palco Premium)"
+  },
+  {
+    "name": "Maratón de Lima 42K",
+    "description": "Circuito por la Costa Verde con salida en Magdalena. Distancias de 10K, 21K y 42K, kit oficial, hidratación cada 2.5 km y medalla de finisher para todos.",
+    "category": "DEPORTE",
+    "venue": "Circuito Costa Verde",
+    "city": "Lima",
+    "startsAt": "2026-12-29T06:00:00-05:00",
+    "maxPerOrder": 4,
+    "zones": [
+      {
+        "name": "Reto 10K",
+        "price": 120
+      },
+      {
+        "name": "Inscripción 21K",
+        "price": 180
+      },
+      {
+        "name": "Inscripción 42K",
+        "price": 240
+      }
+    ]
+  }
+]
