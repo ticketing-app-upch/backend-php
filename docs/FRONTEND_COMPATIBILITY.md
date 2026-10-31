@@ -29,12 +29,24 @@ exclusivos de ADMIN. El ID de organizador en una URL no sustituye la autorizaci�
 ## Catálogo y eventos
 
 `database/data/frontend-venues.json` contiene los 15 recintos y 50 zonas tomados
-del catálogo original de Angular. Nombres, direcciones y aforos son de maqueta;
+del catálogo original de Angular, más **Recinto de prueba**: ciudad Lima,
+slug recinto-prueba, dirección Lima y una zona General de capacidad 1. El total
+es de 16 recintos y 51 zonas. El recinto de prueba no agrega una imagen de plano;
+mapImage es null y conserva la geometría auxiliar generada por el seeder.
+Nombres, direcciones y aforos son de maqueta;
 no constituyen aforos oficiales. VenueSeeder conserva IDs al repetir el seeding.
 Los tres recintos ficticios anteriores, si ya existen, no se borran: pueden tener
 eventos o ventas. El catálogo `/api/v1/recintos` muestra los recintos con slug del
 frontend y entrega sus IDs internos, slug, ciudad, mapImage, nombres y aforos.
 El frontend sigue dibujando sus propios planos; no se copian imágenes al backend.
+
+La creación JSON admite una o más zonas (`min:1`); deben coincidir con todas las
+zonas y aforos del recinto, incluso cuando este solo tiene una zona.
+Después de actualizar el código, cargar el catálogo en la base del entorno con
+`php artisan db:seed --class=VenueSeeder`; en Docker usar
+`docker compose exec app php artisan db:seed --class=VenueSeeder`.
+DatabaseSeeder ya incluye VenueSeeder y el arranque de Render ejecuta db:seed.
+El pull de Git actualiza el JSON, pero la base necesita ejecutar el seeder.
 
 `GET /api/events` y `GET /api/events/{id}` entregan el EventItem esperado:
 
@@ -175,6 +187,13 @@ epicGuard(5), deshabilitado en Demo 3. No se cambia Angular para ocultar estos l
 
 ## Verificación
 
+- Recinto de prueba (2026-10-30): catálogo de 16 recintos y 51 zonas; seeder
+  idempotente conservando IDs. Publicación JSON con una sola zona General de
+  capacidad 1, detalle sin autenticación, una venta exitosa y rechazo de la
+  siguiente sin crear otra orden ni ticket. Se conserva la exigencia de todas
+  las zonas para recintos mayores y se rechaza un evento sin zonas.
+  Suite completa: 265 pruebas y 1510 aserciones aprobadas en Docker/PHP 8.4.27,
+  SQLite en memoria, sin red; Pint aprobado en los tres archivos PHP modificados.
 - BUG-008 (2026-10-30): la prueba nueva reprodujo primero el fallo (segunda
   compra 201 en vez de 409). Tras la corrección, 19 casos de regresión y la suite
   completa aprobados: 262 pruebas y 1474 aserciones en Docker/PHP 8.4.27 con

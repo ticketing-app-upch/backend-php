@@ -23,15 +23,23 @@ class StoreEventTest extends TestCase
 
     public function test_venues_are_seeded_idempotently_with_capacities_and_renderable_maps(): void
     {
+        $venueIds = Venue::orderBy('id')->pluck('id', 'name')->all();
         $this->seed(VenueSeeder::class);
-        $this->assertDatabaseCount('venues', 15);
-        $this->assertDatabaseCount('venue_zones', 50);
+        $this->assertDatabaseCount('venues', 16);
+        $this->assertDatabaseCount('venue_zones', 51);
+        $this->assertSame($venueIds, Venue::orderBy('id')->pluck('id', 'name')->all());
         $response = $this->getJson('/api/v1/recintos', $this->headersFor($this->actor('ORGANIZER')))
-            ->assertOk()->assertJsonCount(15)->assertJsonPath('0.map.viewBox', '0 0 1000 620');
+            ->assertOk()->assertJsonCount(16)->assertJsonPath('0.map.viewBox', '0 0 1000 620');
         foreach ($response->json() as $venue) {
             $this->assertSame($venue['capacity'], array_sum(array_column($venue['zones'], 'capacity')));
             $this->assertSame('rect', $venue['zones'][0]['shape']['type']);
         }
+        $testVenue = Venue::with('zones')->where('slug', 'recinto-prueba')->sole();
+        $this->assertSame('Recinto de prueba', $testVenue->name);
+        $this->assertSame('Lima', $testVenue->city);
+        $this->assertSame(1, $testVenue->capacity);
+        $this->assertSame('General', $testVenue->zones->sole()->name);
+        $this->assertSame(1, $testVenue->zones->sole()->capacity);
     }
 
     public function test_event_is_published_atomically_with_all_venue_zones_and_banner(): void

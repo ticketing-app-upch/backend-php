@@ -44,6 +44,7 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
 - Demo 3: contrato Angular `demo3` documentado en docs/FRONTEND_COMPATIBILITY.md.
   POST /api/events admite EventItem JSON con imágenes JPEG Base64 y el multipart
   anterior con venueId/banner/venueZoneId. Los aforos se validan contra el recinto.
+  Ambos formatos admiten una sola zona, pero deben incluir todas las del recinto.
   JSON exige 24 horas entre eventos; multipart conserva el día calendario de Lima.
   GET /api/events responde al frontend; `?contract=legacy` conserva el formato previo.
   Los endpoints v1 de eventos/favoritos mantienen su formato anterior.
@@ -63,8 +64,11 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
   Nuevas compras: fee y service_fee son 0; total = suma de entradas en centavos.
   Conservar importes/comisiones históricas y respuestas de reintentos previos.
   El endpoint anterior de compra mantiene su pago/importe sin comisión.
-- Catálogo: 15 recintos y 50 zonas en database/data/frontend-venues.json. No borrar
-  recintos históricos ni cambiar IDs/nombres de zonas que tengan ventas.
+- Catálogo: 16 recintos y 51 zonas en database/data/frontend-venues.json:
+  los 15 originales y Recinto de prueba (Lima, una zona General, capacidad 1).
+  VenueSeeder está incluido en DatabaseSeeder; cargarlo tras actualizar el código
+  con php artisan db:seed --class=VenueSeeder en el entorno correspondiente.
+  No borrar recintos históricos ni cambiar IDs/nombres de zonas con ventas.
 - Cotización Demo 3: /api/v1/dynamic-price devuelve precio base de BD. También
   /pricing/api/v1/dynamic-price; el puerto local 8000 sirve el mismo backend.
   No implementar reglas dinámicas de Demo 4 ni confiar en precios del cliente.

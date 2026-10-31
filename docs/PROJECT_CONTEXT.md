@@ -102,13 +102,18 @@ capa adicional de servicios/repositorios. Los recursos usan camelCase e IDs stri
 Contrato vigente: docs/FRONTEND_COMPATIBILITY.md. Entrega anterior registrada en
 docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
 
-- GET /api/v1/recintos (ORGANIZER): 15 recintos y 50 zonas exactos del catálogo
-  Angular en database/data/frontend-venues.json. Aforos de maqueta, nombres exactos,
+- GET /api/v1/recintos (ORGANIZER): 16 recintos y 51 zonas en
+  database/data/frontend-venues.json: 15 recintos originales de Angular más
+  Recinto de prueba (Lima, slug recinto-prueba, una zona General de capacidad 1).
+  VenueSeeder carga el JSON y está incluido en DatabaseSeeder. Ejecutarlo en la
+  base del entorno tras actualizar el código; el pull no actualiza la BD.
+  Aforos de maqueta, nombres exactos,
   slug y geometría auxiliar. No borrar los tres recintos antiguos si ya existen;
   se conservan como históricos y no se muestran en el catálogo nuevo.
 - POST /api/events también recibe EventItem JSON: name, venue string, city,
   zonas con name/capacity/sold=0/price y dos imágenes JPEG Base64 distintas.
   Resuelve recinto/zonas en BD y verifica aforos; el dueño procede del JWT.
+  Admite una o más zonas, exigiendo siempre todas las zonas del recinto seleccionado.
   JSON exige 24 horas de separación; frontend IDs temporales no son IDs de compra.
 - POST /api/events (ORGANIZER activo): multipart con venueId, archivo banner JPEG
   <=2 MiB, mínimo 1920×480/4:1, startsAt futuro y zones[{venueZoneId,basePrice>0}].
@@ -230,6 +235,14 @@ ni duplicar entradas por reintentos. No se probó PostgreSQL. Se retiraron los
 contenedores temporales; no se tocaron frontend, migraciones, despliegue ni BD habitual.
 Registros de entregas: EPIC1_IMPLEMENTATION.md y DEMO3_IMPLEMENTATION.md;
 consultarlos solo para revisar el alcance y los archivos de cada entrega.
+
+Recinto de prueba (2026-10-30): catálogo ampliado a 16 recintos y 51 zonas;
+JSON de eventos admite min:1 en zones. Suite completa de 265 pruebas y 1510
+aserciones aprobadas en Docker/PHP 8.4.27 y SQLite en memoria, sin red;
+Pint aprobado en los tres PHP modificados. Verificados seeding idempotente,
+publicación con General de capacidad 1, detalle público y agotamiento tras
+una sola venta. El seeder del catálogo está incluido en DatabaseSeeder y debe
+ejecutarse en cada base que actualice su código.
 
 Pendientes generales fuera del alcance: CORS explícito, rate limiting y el SQL
 documental antiguo. No instalar paquetes nuevos, tocar producción ni realizar

@@ -8,7 +8,7 @@ antes de abrir únicamente los archivos del flujo solicitado.
 
 El contrato vigente para **frontend-angular, rama demo3**, está en
 [FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBILITY.md). Incluye eventos JSON,
-dos imágenes Base64, 15 recintos/50 zonas, órdenes e importes finales sin comisión adicional.
+dos imágenes Base64, 16 recintos/51 zonas, órdenes e importes finales sin comisión adicional.
 La entrega anterior está registrada en [DEMO3_IMPLEMENTATION.md](docs/DEMO3_IMPLEMENTATION.md).
 El multipart y la compra anterior siguen disponibles; para obtener la respuesta
 anterior de eventos se puede usar `?contract=legacy`. Registro/login conservan
@@ -26,7 +26,7 @@ sus rutas y usan únicamente los campos de registro confirmados por el usuario.
 | `GET /api/events` | Público | Lista eventos publicados y futuros |
 | `GET /api/events/{id}` | Público | Consulta un evento |
 | `POST /api/events` | `ORGANIZER` activo | Crea un evento con recinto predefinido, banner y precios por zona |
-| `GET /api/v1/recintos` | `ORGANIZER` | Lista los 15 recintos demostrativos y sus 50 zonas |
+| `GET /api/v1/recintos` | `ORGANIZER` | Lista los 16 recintos demostrativos y sus 51 zonas |
 | `GET /api/v1/eventos/mios` | `ORGANIZER` | Lista solo sus propios eventos |
 | `PUT/PATCH /api/events/{id}` | `ORGANIZER` | Rechaza edición con 403 en Demo 3 |
 | `GET /api/events/{id}/banner` | Público | Entrega el banner JPEG de un evento publicado |
@@ -120,7 +120,7 @@ docker compose exec app php artisan migrate --seed
 
 `APP_KEY` y `JWT_SECRET` son privados y permanecen en el `.env` ignorado por Git.
 
-`migrate --seed` crea los roles, carga los 15 recintos y 50 zonas, y crea el
+`migrate --seed` crea los roles, carga los 16 recintos y 51 zonas, y crea el
 administrador si se configuró. Repetir el seeder conserva sus credenciales e IDs;
 un correo asignado a otro rol produce un error.
 
@@ -163,6 +163,25 @@ Mantener las claves existentes. Si se cambian variables privadas de `.env`,
 recrear `app` con `docker compose up -d --no-deps --force-recreate app`. Si se
 agregan los datos del administrador después del primer arranque, ejecutar luego
 `docker compose exec app php artisan db:seed`.
+
+### Cargar el recinto de prueba después de actualizar el código
+
+El catálogo versionado incluye **Recinto de prueba**, en Lima, con una sola zona
+**General** de capacidad **1**. La creación de eventos admite una o más zonas,
+siempre que sean todas las zonas del recinto y coincidan sus aforos.
+El catálogo completo tiene 16 recintos y 51 zonas.
+
+Después de hacer pull, con el entorno Docker ya levantado, cargar el catálogo
+en la base de ese integrante sin reconstruirla ni borrar datos:
+
+```bash
+docker compose exec app php artisan db:seed --class=VenueSeeder
+```
+
+`DatabaseSeeder` ya incluye `VenueSeeder`; el comando habitual
+`php artisan migrate --seed` también lo carga. En Render, el script de arranque
+ejecuta `php artisan db:seed --force` con el catálogo de la versión desplegada.
+El pull actualiza el JSON; cada base se actualiza cuando se ejecuta el seeder.
 
 Para detener los servicios conservando los datos de MySQL:
 
@@ -469,8 +488,10 @@ docker compose exec app php artisan test
 | `tests/Feature/DemoThreeMigrationTest.php` | Migraciones reversibles e individualización de ventas antiguas conservando códigos/importes/stock |
 | `tests/Feature/FrontendCompatibilityTest.php` | JSON/imágenes, catálogos, filtros, órdenes sin recargo, idempotencia, permisos, cancelación, rollback e importación histórica |
 
-Última verificación del backend (2026-10-30): **262 pruebas y 1474 aserciones
+Última verificación del backend (2026-10-30): **265 pruebas y 1510 aserciones
 aprobadas** con PHPUnit en Docker/PHP 8.4.27 y SQLite en memoria, sin red.
+Incluye la carga idempotente del nuevo recinto, publicación JSON con una sola
+zona, consulta pública y rechazo de una segunda venta al agotarse la única entrada.
 BUG-008 agrega 19 casos de regresión y se comprobó además con cinco carreras
 en MySQL 8.0.46 temporal, en procesos PHP separados, sin exceder el cupo.
 Pint aprobado en los tres archivos PHP corregidos. No se probó concurrencia
