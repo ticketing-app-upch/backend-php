@@ -31,7 +31,7 @@ sus rutas y usan únicamente los campos de registro confirmados por el usuario.
 | `PUT/PATCH /api/events/{id}` | `ORGANIZER` | Rechaza edición con 403 en Demo 3 |
 | `GET /api/events/{id}/banner` | Público | Entrega el banner JPEG de un evento publicado |
 | `GET/POST/DELETE /api/v1/favoritos` | `CLIENT` | Consulta, agrega o elimina favoritos propios |
-| `POST /api/events/{id}/tickets` | `CLIENT` activo | Compra hasta 6 entradas entre zonas con pago simulado |
+| `POST /api/events/{id}/tickets` | `CLIENT` activo | Compra entradas con pago simulado y máximo acumulado de 6 por usuario/evento |
 | `GET /api/v1/tickets` | `CLIENT` | Lista sus tickets individuales |
 | `GET /api/v1/tickets/{id}` | Cliente propietario | Consulta su propia entrada |
 | `GET /api/v1/tickets/{code}/validacion` | Público | Confirmación de compra sin datos del comprador |
@@ -392,11 +392,24 @@ Para verificar BUG-004 / TC-EXP-002, utiliza `GET /api/events/{id}/sales-report`
 | `GET /api/events` | `200`: EventItem compatible con Angular, zonas, imágenes y campos de apoyo; `[]` si no hay coincidencias | `422` si los filtros son inválidos. Admite search, category, available, venue y date (`YYYY-MM-DD`, día calendario de Lima) |
 | `GET /api/events/{id}` | `200`: datos de un evento publicado y sus zonas | `404`: `{"message":"Evento no disponible"}` si no existe o no está publicado |
 | `POST /api/events` | `201`: evento publicado; admite JSON con dos imágenes Base64 o multipart anterior | `401` sin JWT; `403` por rol/cuenta inactiva; `422` por datos/imágenes inválidos; `409` por separación menor de 24 horas en JSON o mismo día de Lima en multipart |
-| `POST /api/events/{id}/tickets` | `201`: paymentStatus, quantity, totalPrice y array tickets; un ticket por entrada | `401` sin JWT; `403` por rol/cuenta inactiva; `404` evento no disponible; `422` por pago/zona inválidos o total superior a 6; `409` por aforo insuficiente |
-| `POST /api/orders` | `201`: orden con líneas, tickets, subtotal, fee=0 y total sin recargo; `200` en reintento idéntico | `402` pago simulado rechazado; `409` precio/stock/clave incompatibles; `422` formato, zonas o cantidades inválidos; `401/403` por autenticación/permisos |
+| `POST /api/events/{id}/tickets` | `201`: paymentStatus, quantity, totalPrice y array tickets; un ticket por entrada | `401` sin JWT; `403` por rol/cuenta inactiva; `404` evento no disponible; `422` por pago/zona inválidos o cantidad por intento superior al límite; `409` por aforo insuficiente o exceso acumulado por usuario/evento |
+| `POST /api/orders` | `201`: orden con líneas, tickets, subtotal, fee=0 y total sin recargo; `200` en reintento idéntico | `402` pago simulado rechazado; `409` precio/stock/clave incompatibles o exceso acumulado por usuario/evento; `422` formato, zonas o cantidades inválidos; `401/403` por autenticación/permisos |
 | `GET /api/events/{id}/sales-report` | `200`: devuelve `event`, `summary` y `zones`; los totales de ventas e ingresos son cero si no hubo ventas | `401` sin token válido; `403` si no es organizador o no es dueño del evento; `404` si el evento no existe |
 
 En la compra, el error `409` devuelve `{"message":"Aforo insuficiente para la cantidad solicitada"}`. Consultar el reporte de un evento ajeno devuelve `403` con `{"message":"No tienes permiso para consultar este reporte."}`. Una compra rechazada no descuenta cupos ni crea entradas parcialmente.
+
+BUG-008: un usuario puede tener como máximo **6 entradas confirmadas del mismo
+evento**, sumando todas sus compras y zonas por cualquiera de las dos rutas.
+Se cuentan también las entradas históricas sin orden; las canceladas no consumen
+cupo. Las compras de otros usuarios o de otros eventos tienen cupos independientes.
+Por ejemplo, después de comprar 4 entradas puede comprar otras 2; una tercera
+compra de 1 se rechaza con `409` y el mensaje
+`La compra supera el máximo de 6 entradas por usuario para este evento.`
+No se crean órdenes/tickets ni se descuenta stock al rechazarla.
+`maxPerOrder` sigue limitando cada intento, además del máximo acumulado.
+Un reintento idéntico de una orden existente devuelve esa misma orden con `200`
+incluso al haber alcanzado el cupo; no emite entradas adicionales. Las cuentas y
+zonas se bloquean para evitar que intentos simultáneos excedan el límite.
 
 ### Formato de los errores de validación
 
@@ -451,12 +464,17 @@ docker compose exec app php artisan test
 | `tests/Feature/StoreEventTest.php` | Recintos/mapas, banners, fechas de Lima, publicación atómica, permisos, inmutabilidad y Mis Eventos |
 | `tests/Feature/FavoriteTest.php` | Favoritos propios, idempotencia, índice único y catálogo personalizado |
 | `tests/Feature/PurchaseTicketTest.php` | Pago simulado, máximo 6, varias zonas, aforo, rollback y tickets individuales |
+| `tests/Feature/PurchaseLimitTest.php` | BUG-008: máximo acumulado por usuario/evento en ambas rutas, compras parciales, distintas zonas, cancelaciones, tickets históricos y reintentos idempotentes |
 | `tests/Feature/TicketReadTest.php` | Propiedad de entradas, snapshots inmutables y confirmación pública sin datos personales |
 | `tests/Feature/DemoThreeMigrationTest.php` | Migraciones reversibles e individualización de ventas antiguas conservando códigos/importes/stock |
 | `tests/Feature/FrontendCompatibilityTest.php` | JSON/imágenes, catálogos, filtros, órdenes sin recargo, idempotencia, permisos, cancelación, rollback e importación histórica |
 
-Última verificación del backend (2026-10-29): **242 pruebas y 1318 aserciones
+Última verificación del backend (2026-10-30): **262 pruebas y 1474 aserciones
 aprobadas** con PHPUnit en Docker/PHP 8.4.27 y SQLite en memoria, sin red.
+BUG-008 agrega 19 casos de regresión y se comprobó además con cinco carreras
+en MySQL 8.0.46 temporal, en procesos PHP separados, sin exceder el cupo.
+Pint aprobado en los tres archivos PHP corregidos. No se probó concurrencia
+en PostgreSQL ni se modificaron las bases habituales.
 La comprobación aislada con servicios Angular y las carreras concurrentes en
 MySQL están registradas en [FRONTEND_COMPATIBILITY.md](docs/FRONTEND_COMPATIBILITY.md).
 

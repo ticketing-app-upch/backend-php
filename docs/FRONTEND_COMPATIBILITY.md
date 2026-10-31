@@ -112,6 +112,16 @@ los reintentos idempotentes devuelven la compra original. Un expectedTotal disti
 ni descuentos de stock. No se reciben ni guardan tarjeta, vencimiento ni CVV en
 este endpoint: el frontend actual no los envía.
 
+BUG-008 (2026-10-30): el máximo de 6 también es acumulado por usuario y evento,
+sumando entradas confirmadas de todas las zonas, intentos y ambas rutas de compra.
+Los tickets históricos sin orden cuentan por quantity. Las órdenes canceladas no
+consumen ese cupo. maxPerOrder se mantiene como límite adicional de cada intento.
+La cuenta se bloquea antes de consultar el acumulado para serializar compras
+simultáneas. Si se supera el cupo, ambas rutas responden 409 con
+`{"message":"La compra supera el máximo de 6 entradas por usuario para este evento."}`,
+sin crear órdenes/tickets ni descontar stock. Los reintentos con la misma clave y
+payload se resuelven antes de esta comprobación y conservan la respuesta original.
+
 La respuesta es TicketOrder: id/code, snapshots de comprador/evento/fecha/recinto,
 status CONFIRMADA, lines, tickets individuales con códigos únicos, subtotal, fee
 y total. `GET /orders/me` y `GET /orders/{id}` solo exponen compras propias
@@ -165,6 +175,19 @@ epicGuard(5), deshabilitado en Demo 3. No se cambia Angular para ocultar estos l
 
 ## Verificación
 
+- BUG-008 (2026-10-30): la prueba nueva reprodujo primero el fallo (segunda
+  compra 201 en vez de 409). Tras la corrección, 19 casos de regresión y la suite
+  completa aprobados: 262 pruebas y 1474 aserciones en Docker/PHP 8.4.27 con
+  SQLite en memoria, sin red; Pint aprobado en los tres archivos PHP cambiados.
+  Cinco carreras en MySQL 8.0.46 efímero con dos procesos PHP y peticiones al
+  kernel HTTP de Laravel aprobadas: dos compras de 6; rutas mixtas tras comprar 4;
+  dos compras legacy tras comprar 5; dos compras de 3 que completan el cupo;
+  y reintento concurrente con la misma clave. Se forzó solapamiento durante la
+  emisión de tickets; nunca hubo más de 6 confirmados y la séptima entrada
+  recibió 409. El reintento idéntico devolvió 200 sin reemitir entradas.
+  Base temporal en tmpfs sin puertos publicados ni red externa, retirada al
+  terminar; arnés únicamente dentro del contenedor temporal. No se probó
+  PostgreSQL ni se modificó el frontend, despliegue o bases habituales.
 - Corrección del registro (2026-10-29): suite completa ejecutada directamente
   con PHPUnit en Docker/PHP 8.4.27, sin red y con SQLite en memoria: 242 pruebas
   y 1318 aserciones aprobadas. Se verifica empresa obligatoria, descarte de

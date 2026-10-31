@@ -132,6 +132,13 @@ docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
   cardNumber string 13–19 dígitos, cvv string 3–4 dígitos y expiresAt YYYY-MM-DD futuro.
   Aprobación simulada sin guardar tarjeta/CVV; bloquea usuario y zonas por ID.
   Sin aforo: 409, sin cambios parciales. Respuesta {paymentStatus,quantity,totalPrice,tickets}.
+- BUG-008 (2026-10-30): ambas rutas de compra comprueban también un máximo
+  acumulado de 6 entradas confirmadas por usuario y evento, entre todos sus
+  intentos y zonas. Incluye tickets históricos sin orden sumando quantity;
+  las órdenes CANCELADA no consumen cupo. Usuario bloqueado antes de leer
+  el acumulado; exceso devuelve 409 sin nuevas órdenes, tickets ni descuentos.
+  maxPerOrder conserva su significado por intento. Los reintentos idempotentes
+  se resuelven antes del acumulado y devuelven la orden existente.
 - Una entrada = un Ticket con quantity=1, código TICK-año-16hex y snapshots
   inmutables de precio, zona, evento y fecha. GET /api/v1/tickets y .../{id}
   requieren CLIENT y solo retornan propios (ajeno 404).
@@ -212,6 +219,15 @@ aprobadas; Pint aprobado en los 7 archivos PHP corregidos. Se verifica el descar
 de extras y la respuesta de login para perfiles históricos sin cambiar sus datos.
 Sin cambios en frontend, migraciones ni despliegue; no se repitió la integración
 Angular ni las pruebas concurrentes para esta corrección.
+El 2026-10-30, BUG-008: límite acumulado de 6 entradas confirmadas por usuario/evento
+en ambas rutas de compra, conservando el límite de cada intento y los reintentos
+idempotentes. Tickets históricos sin orden incluidos; cancelaciones liberan cupo.
+19 casos nuevos de regresión; suite completa con 262 pruebas y 1474 aserciones
+aprobadas en SQLite en memoria, Docker/PHP 8.4.27 sin red. Pint en los tres PHP
+cambiados aprobado. Cinco carreras en MySQL 8.0.46 temporal con procesos PHP
+distintos y peticiones al kernel HTTP de Laravel aprobadas, sin superar el cupo
+ni duplicar entradas por reintentos. No se probó PostgreSQL. Se retiraron los
+contenedores temporales; no se tocaron frontend, migraciones, despliegue ni BD habitual.
 Registros de entregas: EPIC1_IMPLEMENTATION.md y DEMO3_IMPLEMENTATION.md;
 consultarlos solo para revisar el alcance y los archivos de cada entrega.
 

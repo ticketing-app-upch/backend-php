@@ -1,5 +1,7 @@
 # AGENTS.md — backend-php
 
+Actualizado: 2026-10-30.
+
 ## Entrada rápida
 
 Lee `docs/PROJECT_CONTEXT.md` una vez al iniciar. Contiene el mapa del proyecto,
@@ -46,8 +48,15 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
   GET /api/events responde al frontend; `?contract=legacy` conserva el formato previo.
   Los endpoints v1 de eventos/favoritos mantienen su formato anterior.
   Publicación directa e inmutabilidad. Solo se eliminan eventos sin historial.
-- Compras: pago simulado, máximo 6 entre todas las zonas y un Ticket por entrada.
-  Bloquear filas de zonas en orden estable y guardar snapshots inmutables.
+- Compras: pago simulado y máximo acumulado de 6 entradas confirmadas por usuario
+  y evento entre todas las zonas, intentos y rutas de compra (BUG-008, 2026-10-30).
+  Aplicar el mismo control en POST /api/orders y POST /api/events/{id}/tickets.
+  Sumar quantity, incluidos tickets históricos sin orden; excluir órdenes CANCELADA,
+  que liberan cupo. Otros usuarios y otros eventos tienen cupos independientes.
+  Bloquear primero el usuario, comprobar el acumulado y después bloquear zonas
+  en orden estable; un Ticket por entrada y snapshots inmutables. Exceso acumulado:
+  409 sin escrituras. maxPerOrder sigue siendo un límite adicional por intento.
+  Resolver reintentos idempotentes antes del control acumulado; nunca reemitir tickets.
 - /api/orders agrupa tickets con precios finales sin comisión e idempotencia
   persistente por usuario. Reintento idéntico 200; clave con otro payload 409.
   Cancelación solo ADMIN: restaurar stock una vez y rechazar validación pública.
@@ -103,6 +112,25 @@ efímera aislada, como las documentadas en docs/FRONTEND_COMPATIBILITY.md.
 `vendor/` se instala desde composer.lock. No actualizar dependencias por rutina.
 Verificación excepcional con PHP portátil solo cuando el usuario la autorice;
 no convertirla en un nuevo requisito del proyecto ni versionar el runtime.
+
+### Regresión BUG-008
+
+Código: OrderController::store y EventController::purchaseTickets.
+Pruebas: tests/Feature/PurchaseLimitTest.php (19 casos). Deben cubrir compras
+sucesivas y parciales, rutas alternadas, distintas zonas, cupos independientes,
+cancelaciones, quantity histórico y reintentos idempotentes al alcanzar el límite.
+
+```bash
+docker compose exec app php artisan test --filter=PurchaseLimitTest
+docker compose exec app php artisan test
+```
+
+Verificación del 2026-10-30: 262 pruebas y 1474 aserciones aprobadas en Docker/PHP
+8.4.27 con SQLite en memoria; Pint aprobado en los tres archivos PHP cambiados.
+Cinco escenarios concurrentes aprobados con MySQL 8.0.46 efímero y procesos PHP
+separados, sin superar seis entradas ni duplicarlas en reintentos. No se probó
+concurrencia PostgreSQL. El arnés y la base temporal se retiraron; detalles en
+docs/FRONTEND_COMPATIBILITY.md. No inferir una prueba de despliegue o de la BD real.
 
 ## Límites y seguridad
 
