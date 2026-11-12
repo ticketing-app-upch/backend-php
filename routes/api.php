@@ -5,6 +5,7 @@ use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\FavoriteController;
+use App\Http\Controllers\MarketDashboardController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PricingController;
 use App\Http\Controllers\TicketController;
@@ -61,6 +62,7 @@ Route::middleware(['auth:api', 'role:ORGANIZER'])->group(function () {
     Route::get('/v1/eventos/{id}', [EventController::class, 'showOwn'])->whereNumber('id');
     Route::get('/v1/eventos/{id}/banner', [EventController::class, 'ownBanner'])->whereNumber('id');
     Route::get('/v1/eventos/{id}/secondary-banner', [EventController::class, 'ownSecondaryBanner'])->whereNumber('id');
+    Route::get('/v1/dashboard/mercado', MarketDashboardController::class);
 });
 
 Route::middleware(['auth:api', 'role:CLIENT'])->group(function () {

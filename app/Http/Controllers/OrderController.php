@@ -42,8 +42,16 @@ class OrderController extends Controller
                     return $previous;
                 }
             }
-            $event = Event::whereKey($data['eventId'])->where('status', 'PUBLISHED')->where('starts_at', '>', now())->first();
-            abort_unless($event, 404, 'Evento no disponible');
+            $event = Event::whereKey($data['eventId'])
+                ->where('status', 'PUBLISHED')
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless(
+                $event !== null && $event->starts_at->isFuture(),
+                404,
+                'Evento no disponible',
+            );
             if ($items->sum('quantity') > min(6, $event->max_per_order)) {
                 throw ValidationException::withMessages(['items' => 'La cantidad supera el límite del evento.']);
             }
@@ -103,8 +111,14 @@ class OrderController extends Controller
                 ]);
             }
             foreach ($items as $item) {
-                $zones[$item['zoneId']]->decrement('available_capacity', $item['quantity']);
+                $zones[$item['zoneId']]->decrement(
+                    'available_capacity',
+                    $item['quantity'],
+                );
             }
+
+            $event->recordFirstSoldOut();
+
             $created = true;
 
             return $order;
@@ -141,6 +155,7 @@ class OrderController extends Controller
             $order = TicketOrder::with('tickets')->whereKey($id)->lockForUpdate()->first();
             abort_unless($order, 404, 'Orden no encontrada.');
             abort_unless($order->status === 'CONFIRMADA', 409, 'Esta orden no puede cancelarse.');
+            Event::whereKey($order->event_id)->lockForUpdate()->firstOrFail();
             $zones = EventZone::whereIn('id', $order->tickets->pluck('event_zone_id'))->orderBy('id')
                 ->lockForUpdate()->get()->keyBy('id');
             foreach ($order->tickets->groupBy('event_zone_id') as $zoneId => $tickets) {

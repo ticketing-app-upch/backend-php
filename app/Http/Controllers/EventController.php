@@ -164,8 +164,16 @@ class EventController extends Controller
                 if (! $user->active) {
                     abort(403, 'Tu cuenta está desactivada. Contacta al administrador');
                 }
-                $event = Event::where('status', 'PUBLISHED')->where('starts_at', '>', now())->find($id);
-                abort_unless($event, 404, 'Evento no disponible');
+                $event = Event::whereKey($id)
+                    ->where('status', 'PUBLISHED')
+                    ->lockForUpdate()
+                    ->first();
+
+                abort_unless(
+                    $event !== null && $event->starts_at->isFuture(),
+                    404,
+                    'Evento no disponible',
+                );
                 if (array_sum(array_column($items, 'quantity')) > min(6, $event->max_per_order)) {
                     throw ValidationException::withMessages(['items' => 'La cantidad supera el límite del evento.']);
                 }
@@ -210,8 +218,10 @@ class EventController extends Controller
                     }
                 }
 
+                $event->recordFirstSoldOut();
+
                 return $tickets->load('eventZone.event');
-            });
+            }, 3);
         } catch (InsufficientCapacityException) {
             return response()->json(['message' => 'Aforo insuficiente para la cantidad solicitada'], 409);
         }

@@ -50,6 +50,7 @@ class Event extends Model
             'max_per_order' => 'integer',
             'queue_enabled' => 'boolean',
             'reviewed_at' => 'datetime',
+            'first_sold_out_at' => 'datetime',
         ];
     }
 
@@ -88,5 +89,36 @@ class Event extends Model
     public function favoritedBy(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'favorites')->withTimestamps();
+    }
+
+    /**
+     * Ejecutar dentro de una transacción, después de bloquear el evento.
+     */
+    public function recordFirstSoldOut(): void
+    {
+        if (
+            $this->status !== self::STATUS_PUBLISHED
+            || $this->first_sold_out_at !== null
+        ) {
+            return;
+        }
+
+        $zones = $this->zones()
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get(['id', 'capacity', 'available_capacity']);
+
+        if (
+            $zones->isEmpty()
+            || $zones->sum('capacity') <= 0
+            || ! $zones->every(
+                fn ($zone) => (int) $zone->available_capacity === 0,
+            )
+        ) {
+            return;
+        }
+
+        $this->first_sold_out_at = now();
+        $this->save();
     }
 }
