@@ -34,22 +34,53 @@ class StoreEventTest extends TestCase
         }
     }
 
-    public function test_event_is_published_atomically_with_all_venue_zones_and_banner(): void
+    public function test_event_is_created_pending_with_all_zones_and_banners(): void
     {
         $organizer = $this->actor('ORGANIZER');
         $venue = Venue::with('zones')->firstOrFail();
-        $response = $this->postJson('/api/events', $this->eventPayload(), $this->headersFor($organizer))
-            ->assertCreated()->assertJsonPath('status', 'PUBLISHED')
-            ->assertJsonPath('venueName', $venue->name)->assertJsonPath('venueCapacity', $venue->capacity)
+
+        $response = $this->postJson(
+            '/api/events',
+            $this->eventPayload(),
+            $this->headersFor($organizer),
+        )->assertCreated()
+            ->assertJsonPath('status', 'PENDING_APPROVAL')
+            ->assertJsonPath('queueEnabled', false)
+            ->assertJsonPath('venueName', $venue->name)
+            ->assertJsonPath('venueCapacity', $venue->capacity)
             ->assertJsonCount($venue->zones->count(), 'zones');
-        $this->assertDatabaseHas('events', ['id' => $response->json('id'), 'organizer_id' => $organizer->id]);
+
+        $id = $response->json('id');
+
+        $this->assertDatabaseHas('events', [
+            'id' => $id,
+            'organizer_id' => $organizer->id,
+            'status' => 'PENDING_APPROVAL',
+            'published_at' => null,
+        ]);
+
         foreach ($response->json('zones') as $zone) {
-            $this->assertSame($zone['capacity'], $zone['availableCapacity']);
+            $this->assertSame(
+                $zone['capacity'],
+                $zone['availableCapacity'],
+            );
         }
+
         $this->assertDatabaseCount('event_banners', 1);
-        $this->get('/api/events/'.$response->json('id').'/banner')
-            ->assertOk()->assertHeader('Content-Type', 'image/jpeg');
-        $this->getJson('/api/events')->assertOk()->assertJsonPath('0.id', $response->json('id'));
+
+        $banner = EventBanner::where('event_id', $id)->firstOrFail();
+
+        $this->assertNotEmpty($banner->content);
+        $this->assertNotEmpty($banner->secondary_content);
+
+        $this->get("/api/events/{$id}/banner")->assertNotFound();
+
+        $this->get("/api/events/{$id}/secondary-banner")
+            ->assertNotFound();
+
+        $this->getJson('/api/events')
+            ->assertOk()
+            ->assertExactJson([]);
     }
 
     public function test_unauthenticated_or_other_roles_cannot_create_events_or_list_venues(): void
@@ -77,7 +108,7 @@ class StoreEventTest extends TestCase
     {
         $organizer = $this->actor('ORGANIZER');
         $this->postJson('/api/events', [], $this->headersFor($organizer))->assertUnprocessable()
-            ->assertJsonValidationErrors(['title', 'description', 'category', 'venueId', 'banner', 'startsAt', 'zones']);
+            ->assertJsonValidationErrors(['title', 'description', 'category', 'venueId', 'banner', 'secondaryBanner', 'startsAt', 'zones']);
         $this->postJson('/api/events', $this->eventPayload(['startsAt' => now()->subDay()->toIso8601String()]),
             $this->headersFor($organizer))->assertUnprocessable()->assertJsonValidationErrors('startsAt');
         $this->postJson('/api/events', $this->eventPayload(['endsAt' => now()->toIso8601String()]),
@@ -141,16 +172,42 @@ class StoreEventTest extends TestCase
         $this->assertDatabaseCount('event_banners', 0);
     }
 
-    public function test_same_venue_and_lima_calendar_day_conflicts_but_next_day_is_allowed(): void
+    public function test_same_venue_requires_twenty_four_hours_even_across_midnight(): void
     {
-        $organizer = $this->actor('ORGANIZER');
-        $day = now()->addMonth()->setTimezone('America/Lima')->startOfDay();
-        foreach ([$day->copy()->addHour(), $day->copy()->addHours(22)] as $index => $date) {
-            $response = $this->postJson('/api/events', $this->eventPayload(['startsAt' => $date->toIso8601String()]), $this->headersFor($organizer));
-            $index === 0 ? $response->assertCreated() : $response->assertConflict();
-        }
-        $this->postJson('/api/events', $this->eventPayload(['startsAt' => $day->copy()->addDay()->toIso8601String()]),
-            $this->headersFor($organizer))->assertCreated();
+        $headers = $this->headersFor($this->actor('ORGANIZER'));
+
+        $start = now()
+            ->addMonth()
+            ->setTimezone('America/Lima')
+            ->startOfDay()
+            ->addHours(23);
+
+        $this->postJson(
+            '/api/events',
+            $this->eventPayload([
+                'startsAt' => $start->toIso8601String(),
+            ]),
+            $headers,
+        )->assertCreated();
+
+        // Otro día calendario, pero solo dos horas después.
+        $this->postJson(
+            '/api/events',
+            $this->eventPayload([
+                'startsAt' => $start->copy()->addHours(2)->toIso8601String(),
+            ]),
+            $headers,
+        )->assertConflict();
+
+        // Exactamente 24 horas después sí se permite.
+        $this->postJson(
+            '/api/events',
+            $this->eventPayload([
+                'startsAt' => $start->copy()->addHours(24)->toIso8601String(),
+            ]),
+            $headers,
+        )->assertCreated();
+
         $this->assertDatabaseCount('events', 2);
         $this->assertDatabaseCount('event_banners', 2);
     }

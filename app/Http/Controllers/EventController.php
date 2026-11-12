@@ -6,6 +6,7 @@ use App\Exceptions\InsufficientCapacityException;
 use App\Http\Requests\Event\IndexEventRequest;
 use App\Http\Requests\Event\PurchaseTicketRequest;
 use App\Http\Requests\Event\StoreEventRequest;
+use App\Http\Requests\Event\UpdateEventRequest;
 use App\Http\Resources\EventResource;
 use App\Http\Resources\SalesReportResource;
 use App\Http\Resources\TicketResource;
@@ -58,78 +59,7 @@ class EventController extends Controller
 
     public function store(StoreEventRequest $request): JsonResponse
     {
-        $data = $request->validated();
-        $event = DB::transaction(function () use ($data, $request) {
-            $organizer = User::whereKey($request->user('api')->id)->lockForUpdate()->firstOrFail();
-            if (! $organizer->active) {
-                abort(403, 'Tu cuenta está desactivada. Contacta al administrador');
-            }
-            // Serializa el control de fechas de todas las creaciones del mismo recinto.
-            $frontend = $request->usesFrontendContract();
-            $venueQuery = Venue::with('zones');
-            $venue = ($frontend ? $venueQuery->where('name', $data['venue'])->whereNotNull('slug')
-                : $venueQuery->whereKey($data['venueId']))->lockForUpdate()->firstOrFail();
-            if ($frontend) {
-                if (! empty($data['id'])) {
-                    throw ValidationException::withMessages(['id' => 'Un evento creado no se puede modificar.']);
-                }
-                if ($data['city'] !== $venue->city || (int) $data['venueCapacity'] !== $venue->capacity) {
-                    throw ValidationException::withMessages(['venue' => 'La ciudad y el aforo deben coincidir con el catálogo del recinto.']);
-                }
-                $byName = collect($data['zones'])->keyBy('name');
-                if ($byName->count() !== $venue->zones->count() || $venue->zones->contains(
-                    fn ($zone) => ! isset($byName[$zone->name]) || (int) $byName[$zone->name]['capacity'] !== $zone->capacity
-                )) {
-                    throw ValidationException::withMessages(['zones' => 'Las zonas y aforos deben coincidir exactamente con el recinto.']);
-                }
-                $prices = $venue->zones->mapWithKeys(fn ($zone) => [$zone->id => ['basePrice' => $byName[$zone->name]['price']]]);
-            } else {
-                $prices = collect($data['zones'])->keyBy('venueZoneId');
-            }
-            if ($prices->count() !== $venue->zones->count()
-                || $venue->zones->pluck('id')->diff($prices->keys())->isNotEmpty()) {
-                throw ValidationException::withMessages(['zones' => 'Debes indicar el precio de cada zona del recinto seleccionado.']);
-            }
-            $startsAt = CarbonImmutable::parse($data['startsAt']);
-            $day = $startsAt->setTimezone(config('ticketing.venue_timezone'))->startOfDay();
-            $conflicts = Event::where('venue_id', $venue->id);
-            if ($frontend ? $conflicts->where('status', '!=', 'DRAFT')
-                ->where('starts_at', '>', $startsAt->utc()->subHours(24))
-                ->where('starts_at', '<', $startsAt->utc()->addHours(24))->exists() : $conflicts
-                ->where('starts_at', '>=', $day->utc())
-                ->where('starts_at', '<', $day->addDay()->utc())->exists()) {
-                abort(409, $frontend ? 'El recinto ya tiene un evento con menos de un día de diferencia.'
-                    : 'El recinto ya tiene un evento en ese día calendario.');
-            }
-            $event = Event::create([
-                'organizer_id' => $organizer->id, 'venue_id' => $venue->id,
-                'title' => $frontend ? $data['name'] : $data['title'], 'description' => $data['description'],
-                'category' => $data['category'], 'venue_name' => $venue->name,
-                'venue_address' => $venue->address, 'venue_capacity' => $venue->capacity,
-                'starts_at' => $startsAt->utc(),
-                'ends_at' => isset($data['endsAt']) ? CarbonImmutable::parse($data['endsAt'])->utc() : null,
-                'status' => 'PUBLISHED',
-                'city' => $venue->city, 'image_url' => $frontend ? ($data['imageUrl'] ?? null) : null,
-                'published_at' => now(), 'max_per_order' => $frontend ? $data['maxPerOrder'] : 6,
-            ]);
-            foreach ($venue->zones as $zone) {
-                $event->zones()->create([
-                    'venue_zone_id' => $zone->id, 'name' => $zone->name,
-                    'capacity' => $zone->capacity, 'available_capacity' => $zone->capacity,
-                    'base_price' => $prices[$zone->id]['basePrice'],
-                ]);
-            }
-            $event->banner()->create([
-                'content' => $frontend ? substr($data['bannerUrl'], strlen('data:image/jpeg;base64,'))
-                    : base64_encode($request->file('banner')->getContent()),
-                'secondary_content' => $frontend ? substr($data['secondaryBannerUrl'], strlen('data:image/jpeg;base64,')) : null,
-            ]);
-
-            return $event;
-        });
-
-        return response()->json(new EventResource($event->load(['zones', 'venue.zones'])->loadExists(['banner',
-            'banner as secondary_banner_exists' => fn ($query) => $query->whereNotNull('secondary_content')])), 201);
+        return $this->persistEvent($request);
     }
 
     public function mine(Request $request): JsonResponse
@@ -179,11 +109,11 @@ class EventController extends Controller
         ]);
     }
 
-    public function update(string $id): JsonResponse
-    {
-        abort_unless(Event::whereKey($id)->exists(), 404, 'Evento no disponible');
-
-        return response()->json(['message' => 'Los eventos no se pueden modificar en Demo 3.'], 403);
+    public function update(
+        string $id,
+        UpdateEventRequest $request,
+    ): JsonResponse {
+        return $this->persistEvent($request, $id);
     }
 
     public function byOrganizer(string $organizerId, Request $request): JsonResponse
@@ -302,6 +232,11 @@ class EventController extends Controller
         if ($event->organizer_id !== $request->user('api')->id) {
             return response()->json(['message' => 'No tienes permiso para consultar este reporte.'], 403);
         }
+        if ($event->status !== Event::STATUS_PUBLISHED) {
+            return response()->json([
+                'message' => 'El reporte solo está disponible para eventos publicados.',
+            ], 403);
+        }
         $event->load(['zones' => fn ($query) => $query
             ->withSum(['tickets as tickets_sold' => fn ($tickets) => $tickets->where(fn ($valid) => $valid
                 ->whereNull('ticket_order_id')->orWhereHas('order', fn ($orders) => $orders->where('status', 'CONFIRMADA')))], 'quantity')
@@ -309,5 +244,321 @@ class EventController extends Controller
                 ->whereNull('ticket_order_id')->orWhereHas('order', fn ($orders) => $orders->where('status', 'CONFIRMADA')))], 'total_price')->orderBy('id')]);
 
         return response()->json(new SalesReportResource($event));
+    }
+
+    private function persistEvent(
+        StoreEventRequest $request,
+        ?string $id = null,
+    ): JsonResponse {
+        $data = $request->validated();
+
+        $event = DB::transaction(function () use ($request, $data, $id) {
+            $organizer = User::whereKey($request->user('api')->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            abort_unless(
+                $organizer->active,
+                403,
+                'Tu cuenta está desactivada. Contacta al administrador',
+            );
+
+            $snapshot = $id === null ? null : Event::find($id);
+
+            if ($id !== null) {
+                abort_unless($snapshot, 404, 'Evento no encontrado.');
+            }
+
+            $frontend = $request->usesFrontendContract();
+
+            $venueQuery = Venue::query();
+
+            $selectedVenue = ($frontend
+                ? $venueQuery->where('name', $data['venue'])
+                    ->whereNotNull('slug')
+                : $venueQuery->whereKey($data['venueId']))
+                ->firstOrFail();
+
+            // Al cambiar de recinto, bloquear ambos en el mismo orden.
+            $venueIds = array_values(array_unique(array_filter([
+                $selectedVenue->id,
+                $snapshot?->venue_id,
+            ], fn ($value) => $value !== null)));
+
+            $venues = Venue::with('zones')
+                ->whereIn('id', $venueIds)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            $venue = $venues->firstWhere('id', $selectedVenue->id);
+
+            abort_unless(
+                $venue,
+                409,
+                'El recinto cambió. Actualiza la información e intenta nuevamente.',
+            );
+
+            $event = null;
+
+            if ($id !== null) {
+                $event = Event::whereKey($id)
+                    ->lockForUpdate()
+                    ->first();
+
+                abort_unless($event, 404, 'Evento no encontrado.');
+
+                // Revalidar dentro de la transacción, después de los bloqueos.
+                abort_unless(
+                    (string) $event->organizer_id === (string) $organizer->id,
+                    403,
+                    'No tienes permiso para editar este evento.',
+                );
+
+                abort_unless(
+                    $event->status === Event::STATUS_REJECTED,
+                    403,
+                    'Solo se pueden editar eventos rechazados.',
+                );
+
+                abort_if(
+                    $event->venue_id !== $snapshot->venue_id,
+                    409,
+                    'El evento cambió. Actualiza la información antes de editarlo.',
+                );
+
+                $zoneIds = $event->zones()->pluck('id');
+
+                abort_if(
+                    TicketOrder::where('event_id', $event->id)->exists()
+                        || Ticket::whereIn('event_zone_id', $zoneIds)->exists()
+                        || $event->zones()
+                            ->whereColumn('available_capacity', '<>', 'capacity')
+                            ->exists(),
+                    409,
+                    'Un evento con historial de ventas no puede modificarse.',
+                );
+            }
+
+            if ($frontend) {
+                if ($id === null && ! empty($data['id'])) {
+                    throw ValidationException::withMessages([
+                        'id' => 'Un evento creado no se puede modificar.',
+                    ]);
+                }
+
+                if (
+                    $data['city'] !== $venue->city
+                    || (int) $data['venueCapacity'] !== $venue->capacity
+                ) {
+                    throw ValidationException::withMessages([
+                        'venue' => 'La ciudad y el aforo deben coincidir con el catálogo del recinto.',
+                    ]);
+                }
+
+                $byName = collect($data['zones'])->keyBy('name');
+
+                if (
+                    $byName->count() !== $venue->zones->count()
+                    || $venue->zones->contains(
+                        fn ($zone) => ! isset($byName[$zone->name])
+                            || (int) $byName[$zone->name]['capacity']
+                                !== $zone->capacity
+                    )
+                ) {
+                    throw ValidationException::withMessages([
+                        'zones' => 'Las zonas y aforos deben coincidir exactamente con el recinto.',
+                    ]);
+                }
+
+                $prices = $venue->zones->mapWithKeys(
+                    fn ($zone) => [
+                        $zone->id => [
+                            'basePrice' => $byName[$zone->name]['price'],
+                        ],
+                    ]
+                );
+            } else {
+                $prices = collect($data['zones'])->keyBy('venueZoneId');
+            }
+
+            if (
+                $prices->count() !== $venue->zones->count()
+                || $venue->zones->pluck('id')->diff($prices->keys())->isNotEmpty()
+            ) {
+                throw ValidationException::withMessages([
+                    'zones' => 'Debes indicar el precio de cada zona del recinto seleccionado.',
+                ]);
+            }
+
+            $startsAt = CarbonImmutable::parse($data['startsAt']);
+
+            // La fecha puede vencer mientras la petición espera un bloqueo.
+            if ($startsAt->lessThanOrEqualTo(now())) {
+                throw ValidationException::withMessages([
+                    'startsAt' => 'La fecha del evento debe ser futura.',
+                ]);
+            }
+
+            $conflicts = Event::where('venue_id', $venue->id)
+                ->whereIn('status', [
+                    Event::STATUS_PENDING_APPROVAL,
+                    Event::STATUS_PUBLISHED,
+                ]);
+
+            if ($event !== null) {
+                $conflicts->where('id', '!=', $event->id);
+            }
+
+            $conflicts
+                ->where('starts_at', '>', $startsAt->utc()->subHours(24))
+                ->where('starts_at', '<', $startsAt->utc()->addHours(24));
+
+            $conflict = $conflicts
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->first(['id']);
+
+            abort_if(
+                $conflict !== null,
+                409,
+                'El recinto ya tiene un evento con menos de 24 horas de diferencia.',
+            );
+
+            $attributes = [
+                'organizer_id' => $organizer->id,
+                'venue_id' => $venue->id,
+                'title' => $frontend ? $data['name'] : $data['title'],
+                'description' => $data['description'],
+                'category' => $data['category'],
+                'venue_name' => $venue->name,
+                'venue_address' => $venue->address,
+                'venue_capacity' => $venue->capacity,
+                'starts_at' => $startsAt->utc(),
+                'ends_at' => isset($data['endsAt'])
+                    ? CarbonImmutable::parse($data['endsAt'])->utc()
+                    : null,
+                'status' => Event::STATUS_PENDING_APPROVAL,
+                'queue_enabled' => $data['queueEnabled']
+                    ?? ($event?->queue_enabled ?? false),
+                'city' => $venue->city,
+                'image_url' => $frontend
+                    ? ($data['imageUrl'] ?? null)
+                    : $event?->image_url,
+                'published_at' => null,
+                'max_per_order' => $frontend
+                    ? $data['maxPerOrder']
+                    : ($event?->max_per_order ?? 6),
+                'rejection_reason' => null,
+                'reviewed_at' => null,
+                'reviewed_by' => null,
+            ];
+
+            if ($event === null) {
+                $event = Event::create($attributes);
+            } else {
+                $event->update($attributes);
+
+                // Solo se reemplazan zonas tras comprobar que no existe historial.
+                $event->zones()->delete();
+            }
+
+            foreach ($venue->zones as $zone) {
+                $event->zones()->create([
+                    'venue_zone_id' => $zone->id,
+                    'name' => $zone->name,
+                    'capacity' => $zone->capacity,
+                    'available_capacity' => $zone->capacity,
+                    'base_price' => $prices[$zone->id]['basePrice'],
+                ]);
+            }
+
+            $event->banner()->updateOrCreate([], [
+                'content' => $frontend
+                    ? substr(
+                        $data['bannerUrl'],
+                        strlen('data:image/jpeg;base64,'),
+                    )
+                    : base64_encode($request->file('banner')->getContent()),
+                'secondary_content' => $frontend
+                    ? substr(
+                        $data['secondaryBannerUrl'],
+                        strlen('data:image/jpeg;base64,'),
+                    )
+                    : base64_encode(
+                        $request->file('secondaryBanner')->getContent()
+                    ),
+            ]);
+
+            return $event;
+        }, 3);
+
+        $event->load(['zones', 'venue.zones'])->loadExists([
+            'banner',
+            'banner as secondary_banner_exists' => fn ($query) => $query
+                ->whereNotNull('secondary_content'),
+        ]);
+
+        return response()->json(
+            new EventResource($event),
+            $id === null ? 201 : 200,
+        );
+    }
+
+    public function showOwn(string $id, Request $request): JsonResponse
+    {
+        $event = Event::where('organizer_id', $request->user('api')->id)
+            ->with(['zones', 'venue.zones'])
+            ->withExists([
+                'banner',
+                'banner as secondary_banner_exists' => fn ($query) => $query
+                    ->whereNotNull('secondary_content'),
+            ])
+            ->find($id);
+
+        abort_unless($event, 404, 'Evento no encontrado.');
+
+        return response()->json(new EventResource($event));
+    }
+
+    public function ownBanner(string $id, Request $request): Response
+    {
+        return $this->ownImage($id, $request, false);
+    }
+
+    public function ownSecondaryBanner(string $id, Request $request): Response
+    {
+        return $this->ownImage($id, $request, true);
+    }
+
+    private function ownImage(
+        string $id,
+        Request $request,
+        bool $secondary,
+    ): Response {
+        $event = Event::where('organizer_id', $request->user('api')->id)
+            ->find($id);
+
+        abort_unless($event, 404, 'Evento no encontrado.');
+
+        $banner = $event->banner;
+
+        abort_unless($banner, 404, 'Banner no encontrado.');
+
+        $content = $secondary
+            ? $banner->secondary_content
+            : $banner->content;
+
+        abort_unless($content, 404, 'Banner no encontrado.');
+
+        $bytes = base64_decode($content, true);
+
+        abort_if($bytes === false, 404, 'Banner no disponible.');
+
+        return response($bytes, 200, [
+            'Content-Type' => 'image/jpeg',
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control' => 'private, no-store',
+        ]);
     }
 }

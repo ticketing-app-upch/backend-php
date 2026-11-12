@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdminEventController;
 use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EventController;
@@ -20,6 +21,11 @@ Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth
 Route::prefix('v1/admin')->middleware(['auth:api', 'role:ADMIN'])->group(function () {
     Route::get('/usuarios', [AdminUserController::class, 'index']);
     Route::patch('/usuarios/{id}/estado', [AdminUserController::class, 'updateStatus'])->whereNumber('id');
+    Route::patch('/eventos/{id}/estado', [AdminEventController::class, 'review'])->whereNumber('id');
+    Route::get('/eventos', [AdminEventController::class, 'index']);
+    Route::get('/eventos/{id}', [AdminEventController::class, 'show'])->whereNumber('id');
+    Route::get('/eventos/{id}/banner', [AdminEventController::class, 'banner'])->whereNumber('id');
+    Route::get('/eventos/{id}/secondary-banner', [AdminEventController::class, 'secondaryBanner'])->whereNumber('id');
 });
 
 Route::get('/events', [EventController::class, 'index']);
@@ -51,6 +57,10 @@ Route::middleware(['auth:api', 'role:ORGANIZER'])->group(function () {
     Route::post('/events', [EventController::class, 'store']);
     Route::match(['put', 'patch'], '/events/{id}', [EventController::class, 'update'])->whereNumber('id');
     Route::get('/events/{id}/sales-report', [EventController::class, 'salesReport']);
+    Route::put('/v1/eventos/{id}', [EventController::class, 'update'])->whereNumber('id');
+    Route::get('/v1/eventos/{id}', [EventController::class, 'showOwn'])->whereNumber('id');
+    Route::get('/v1/eventos/{id}/banner', [EventController::class, 'ownBanner'])->whereNumber('id');
+    Route::get('/v1/eventos/{id}/secondary-banner', [EventController::class, 'ownSecondaryBanner'])->whereNumber('id');
 });
 
 Route::middleware(['auth:api', 'role:CLIENT'])->group(function () {

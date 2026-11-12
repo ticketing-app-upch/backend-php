@@ -21,10 +21,25 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'starts_at',
     'ends_at',
     'status',
-    'city', 'image_url', 'published_at', 'max_per_order',
+    'city',
+    'image_url',
+    'published_at',
+    'max_per_order',
+    'queue_enabled',
+    'rejection_reason',
+    'reviewed_at',
+    'reviewed_by',
 ])]
 class Event extends Model
 {
+    public const STATUS_DRAFT = 'DRAFT';
+
+    public const STATUS_PENDING_APPROVAL = 'PENDING_APPROVAL';
+
+    public const STATUS_PUBLISHED = 'PUBLISHED';
+
+    public const STATUS_REJECTED = 'REJECTED';
+
     protected function casts(): array
     {
         return [
@@ -33,12 +48,26 @@ class Event extends Model
             'ends_at' => 'datetime',
             'published_at' => 'datetime',
             'max_per_order' => 'integer',
+            'queue_enabled' => 'boolean',
+            'reviewed_at' => 'datetime',
         ];
+    }
+
+    public function isReviewExpired(): bool
+    {
+        return $this->status === self::STATUS_PENDING_APPROVAL
+            && $this->starts_at !== null
+            && $this->starts_at->lessThanOrEqualTo(now());
     }
 
     public function organizer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'organizer_id');
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
     }
 
     public function zones(): HasMany

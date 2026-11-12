@@ -49,6 +49,7 @@ trait BuildsDemoThreeFixtures
             'category' => 'CONCIERTO', 'venueId' => $venue->id,
             'startsAt' => now()->addMonth()->toIso8601String(), 'endsAt' => null,
             'banner' => $this->bannerFile(),
+            'secondaryBanner' => $this->bannerFile(),
             'zones' => $venue->zones->map(fn ($zone) => [
                 'venueZoneId' => $zone->id, 'basePrice' => 50,
             ])->all(),

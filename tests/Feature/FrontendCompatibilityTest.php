@@ -55,24 +55,98 @@ class FrontendCompatibilityTest extends TestCase
     {
         $owner = $this->actor('ORGANIZER');
         $payload = $this->frontendEvent();
-        $response = $this->postJson('/api/events', $payload, $this->headersFor($owner))->assertCreated()
-            ->assertJsonPath('name', $payload['name'])->assertJsonPath('status', 'PUBLICADO')
-            ->assertJsonPath('venue', 'Arena 1 — Costa Verde')->assertJsonPath('city', 'Lima')
-            ->assertJsonPath('organizerId', (string) $owner->id)->assertJsonPath('maxPerOrder', 6)
-            ->assertJsonPath('zones.0.price', 50)->assertJsonPath('zones.0.sold', 0);
+
+        $response = $this->postJson(
+            '/api/events',
+            $payload,
+            $this->headersFor($owner),
+        )->assertCreated()
+            ->assertJsonPath('name', $payload['name'])
+            ->assertJsonPath('status', 'PENDIENTE_APROBACION')
+            ->assertJsonPath('backendStatus', 'PENDING_APPROVAL')
+            ->assertJsonPath('publishedAt', null)
+            ->assertJsonPath('venue', 'Arena 1 — Costa Verde')
+            ->assertJsonPath('city', 'Lima')
+            ->assertJsonPath('organizerId', (string) $owner->id)
+            ->assertJsonPath('maxPerOrder', 6)
+            ->assertJsonPath('zones.0.price', 50)
+            ->assertJsonPath('zones.0.sold', 0);
+
         $id = $response->json('id');
-        $this->get('/api/events/'.$id.'/banner')->assertOk()
-            ->assertContent(base64_decode(substr($payload['bannerUrl'], 23)));
-        $this->get('/api/events/'.$id.'/secondary-banner')->assertOk()
-            ->assertContent(base64_decode(substr($payload['secondaryBannerUrl'], 23)));
+
+        // Mientras está pendiente, no es público.
+        $this->getJson('/api/events')->assertOk()->assertExactJson([]);
+        $this->getJson("/api/events/{$id}")->assertNotFound();
+        $this->get("/api/events/{$id}/banner")->assertNotFound();
+        $this->get("/api/events/{$id}/secondary-banner")
+            ->assertNotFound();
+
+        $adminHeaders = $this->headersFor($this->actor('ADMIN'));
+
+        // El administrador puede revisar ambos banners.
+        $this->get(
+            "/api/v1/admin/eventos/{$id}/banner",
+            $adminHeaders,
+        )->assertOk()
+            ->assertContent(
+                base64_decode(substr($payload['bannerUrl'], 23))
+            );
+
+        $this->get(
+            "/api/v1/admin/eventos/{$id}/secondary-banner",
+            $adminHeaders,
+        )->assertOk()
+            ->assertContent(
+                base64_decode(substr($payload['secondaryBannerUrl'], 23))
+            );
+
+        $this->patchJson(
+            "/api/v1/admin/eventos/{$id}/estado",
+            ['status' => 'PUBLISHED'],
+            $adminHeaders,
+        )->assertOk();
+
+        // Después de aprobar, los banners son públicos.
+        $this->get("/api/events/{$id}/banner")
+            ->assertOk()
+            ->assertContent(
+                base64_decode(substr($payload['bannerUrl'], 23))
+            );
+
+        $this->get("/api/events/{$id}/secondary-banner")
+            ->assertOk()
+            ->assertContent(
+                base64_decode(substr($payload['secondaryBannerUrl'], 23))
+            );
+
         DB::enableQueryLog();
-        $this->getJson('/api/events')->assertOk()->assertJsonPath('0.id', $id)
-            ->assertJsonMissingPath('0.content')->assertJsonMissingPath('0.secondary_content');
-        $queries = DB::getQueryLog();
-        DB::disableQueryLog();
-        $this->assertFalse(collect($queries)->contains(fn ($query) => preg_match('/^select \* from ["`]?event_banners/i', $query['query'])));
-        $this->getJson('/api/events/'.$id.'?contract=legacy')->assertOk()
-            ->assertJsonPath('status', 'PUBLISHED')->assertJsonPath('venue.name', $payload['venue']);
+
+        try {
+            $this->getJson('/api/events')
+                ->assertOk()
+                ->assertJsonPath('0.id', $id)
+                ->assertJsonPath('0.status', 'PUBLICADO')
+                ->assertJsonMissingPath('0.content')
+                ->assertJsonMissingPath('0.secondary_content');
+
+            $queries = DB::getQueryLog();
+        } finally {
+            DB::disableQueryLog();
+        }
+
+        $this->assertFalse(
+            collect($queries)->contains(
+                fn ($query) => preg_match(
+                    '/^select \* from ["`]?event_banners/i',
+                    $query['query'],
+                )
+            )
+        );
+
+        $this->getJson("/api/events/{$id}?contract=legacy")
+            ->assertOk()
+            ->assertJsonPath('status', 'PUBLISHED')
+            ->assertJsonPath('venue.name', $payload['venue']);
     }
 
     public static function invalidFrontendEvents(): array
@@ -374,5 +448,66 @@ class FrontendCompatibilityTest extends TestCase
         $this->getJson('/api/orders/me', $this->headersFor($buyer))->assertOk()->assertJsonCount(1)
             ->assertJsonPath('0.total', 50)->assertJsonPath('0.fee', 0)
             ->assertJsonPath('0.tickets.0.code', 'legacy-existing-code');
+    }
+
+    public static function venueSpacingCases(): array
+    {
+        $cases = [];
+
+        foreach ([false, true] as $frontend) {
+            foreach ([
+                'less than 24 hours after' => [86399, 409],
+                'exactly 24 hours after' => [86400, 201],
+                'less than 24 hours before' => [-86399, 409],
+                'exactly 24 hours before' => [-86400, 201],
+            ] as $name => [$seconds, $expectedStatus]) {
+                $format = $frontend ? 'json' : 'multipart';
+
+                $cases[$format.' '.$name] = [
+                    $frontend,
+                    $seconds,
+                    $expectedStatus,
+                ];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('venueSpacingCases')]
+    public function test_both_contracts_enforce_the_same_twenty_four_hour_boundary(
+        bool $frontend,
+        int $seconds,
+        int $expectedStatus,
+    ): void {
+        $payload = $frontend
+            ? $this->frontendEvent()
+            : $this->eventPayload();
+
+        $venue = $frontend
+            ? Venue::where('name', $payload['venue'])->firstOrFail()
+            : Venue::findOrFail($payload['venueId']);
+
+        $start = now()->addDays(10);
+
+        $this->publishedEvent([
+            'venue_id' => $venue->id,
+            'starts_at' => $start,
+        ]);
+
+        $payload['startsAt'] = $start->copy()
+            ->addSeconds($seconds)
+            ->toIso8601String();
+
+        $this->postJson(
+            '/api/events',
+            $payload,
+            $this->headersFor($this->actor('ORGANIZER')),
+        )->assertStatus($expectedStatus);
+
+        $this->assertDatabaseCount(
+            'events',
+            $expectedStatus === 201 ? 2 : 1,
+        );
     }
 }
