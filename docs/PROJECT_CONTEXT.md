@@ -49,7 +49,10 @@ y limpieza del navegador corresponden a Angular y no se verifican aquí.
 | Catálogo/creación/compra/reporte | EventController, Requests/Event, Resources de eventos/tickets/ventas | IndexEventTest, StoreEventTest, PurchaseTicketTest, SalesReportTest |
 | Recintos/mapas y favoritos | VenueController, VenueSeeder, VenueResource; FavoriteController | StoreEventTest, FavoriteTest |
 | Mis Tickets/validación pública | TicketController, TicketResource, Ticket | TicketReadTest, DemoThreeMigrationTest |
-| Compatibilidad Angular demo3 | OrderController, PricingController, OrderResource, Requests/Event, catálogo JSON | FrontendCompatibilityTest |
+| Compra e idempotencia | OrderController, EventController, OrderResource, Requests/Event | FrontendCompatibilityTest, PurchaseTicketTest, PurchaseLimitTest (main) |
+| Cola virtual | VirtualQueueController, Support/VirtualQueue, servicio Python | VirtualQueueTest, test_virtual_queue.py |
+| Confirmación por correo | Mail/PurchaseConfirmed, Mail/GmailTransport, config/mail.php, config/services.php | Pruebas de correo en FrontendCompatibilityTest |
+| Cotización y compatibilidad Angular | PricingController, EventResource, catálogo JSON | FrontendCompatibilityTest |
 | Rutas y despliegue | routes/api.php, render.yaml, bin/deploy.sh, Dockerfile.render | route:list y pruebas HTTP |
 
 Los controladores están en app/Http/Controllers; requests y resources bajo
@@ -215,10 +218,10 @@ docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
   y mostrar ocupación por zona. La ficha todavía no muestra explícitamente
   el estado del evento debajo del título. Logout en Angular sigue siendo local.
 
-Angular demo4 conserva useMock/useMockAuth=true en el repositorio. Con mocks
-desactivados usa la API de favoritos, validación pública y cola. Logout solo
-limpia la sesión local. La integración temporal solo cambia configuración de una copia aislada;
-no modificar el repositorio Angular original ni dejar esa copia al finalizar.
+La rama Angular demo4 sirve como referencia de contrato y conserva
+useMock/useMockAuth=true en el checkout. El frontend desplegado aún no tiene
+actualizado el flujo de cola, según el usuario. Las pruebas actuales de cola,
+compra y correo en Render se hacen con Postman directamente contra Laravel.
 
 ## Operación, pruebas y despliegue
 
@@ -251,11 +254,61 @@ No usar migrate:fresh. La migración de
 tickets individualiza ventas antiguas conservando ID/código original, importe y
 stock; guarda snapshots y no elimina ventas al revertir columnas.
 
-Servicio conocido: https://alpateck-backend.onrender.com. El 2026-10-25 se verificó
-200 en /up y /api/events y un despliegue exitoso del commit b9e7446. Los cambios
-de la Épica 1 y Demo 3 se entregan en la rama feat/demo_3. Main no se modificó;
-publicar esa rama no la integra a main ni despliega Render automáticamente.
-No confundir el servicio ya existente con esta nueva versión.
+### Estado observado en Render el 2026-11-13 (Lima)
+
+- Laravel en `https://alpateck-backend.onrender.com`. El [PR #21](https://github.com/ticketing-app-upch/backend-php/pull/21)
+  integró `fix/compra-render` (`1369af0`) en `main` con el commit `c67749b`.
+  El panel de Render mostró ese commit como `Live`, con `Auto-Deploy` como
+  origen del [despliegue](https://dashboard.render.com/web/srv-dbelmuvb9u1s73a5c61g/deploys/dep-dbrsr7lbedkc73bhjd2g).
+- Python en `https://pricing-service-python.onrender.com`. Render mostró `main`
+  en `53dbc00` como `Live` (PR #1 de `ticketing-app-upch/pricing-service-python`).
+  Las cuatro pruebas unitarias de Python y la prueba HTTP de `/health` e ingreso
+  autenticado pasaron en Docker local.
+- El usuario informó que configuró las variables de entorno en Render. En la
+  instancia gratuita de Python, los turnos en memoria y el SQLite local se
+  pierden si Render reinicia o suspende el servicio. Para un `503` de cola,
+  comprobar `/health` de Python, revisar su log y verificar que Laravel apunte
+  a la URL pública del servicio, que ambos tengan el mismo token y que la clave
+  pública de Laravel corresponda a la privada de Python.
+- En `254d26c` (PR #20), Postman mostró `500 Server Error` en `POST /api/orders`.
+  Los logs de Laravel registraron `Undefined variable $requestedQuantity` en
+  `OrderController.php:68`. `EventController::purchaseTickets` tenía el mismo
+  error. Ambas rutas fallaban antes de crear la orden y programar el correo.
+  El PR #21 calcula `$requestedQuantity` en los dos controladores antes de
+  comprobar el máximo por orden y el máximo acumulado de seis entradas por
+  usuario y evento. Si Postman responde `401 Unauthenticated`, volver a iniciar
+  sesión y repetir con un JWT vigente.
+- El usuario confirmó una compra de prueba en Render y mostró la recepción de
+  `Compra confirmada` en Gmail, con una entrada General para el Festival de Luz
+  y Sabor. La captura acredita la entrega del correo. Queda por documentar si esa
+  compra usó un pase de cola y si se repitió con la misma clave de idempotencia.
+- La verificación previa de la corrección en Docker con SQLite tuvo 82 de 83
+  casos aprobados, incluidos límite acumulado, cola y Gmail simulado. El caso
+  restante,
+  `test_single_zone_test_venue_can_be_published_read_publicly_and_sold_out`,
+  recibió 404 al consultar el detalle público de un evento recién creado, que
+  requiere aprobación de ADMIN. El fallo ocurrió antes de intentar la compra.
+
+### Prueba de compra desde Postman
+
+1. Enviar `POST /api/auth/login` y usar el campo `token` como `Bearer` en las
+   solicitudes del comprador. Enviar JSON con `Accept: application/json`.
+2. Consultar `GET /api/events/{id}` para obtener `zones[].id`, disponibilidad y
+   `purchasesEnabled`. Si se prueba un evento con cola, usar uno publicado,
+   futuro y con compras habilitadas por su organizador. Enviar
+   `POST /api/v1/eventos/{id}/cola` y consultar
+   `GET /api/v1/eventos/{id}/cola/estado` hasta que devuelva `ADMITTED`.
+   Guardar `passToken` y abrir el pago con
+   `POST /api/v1/eventos/{id}/pago/apertura` (204).
+3. Enviar `POST /api/orders` con `eventId`, `items` (zona y cantidad),
+   `paymentMethod=CARD`, `paymentResult=APPROVED` y una `idempotencyKey`
+   propia de la prueba. Para eventos con cola, pasar `passToken` en `queuePass`
+   antes de que expire. La primera creación debe dar 201. Repetir la misma
+   solicitud con la misma clave debe dar 200 con la orden original.
+4. Confirmar la orden en `GET /api/orders/me` y buscar `Compra confirmada` en
+   el buzón del comprador. Si la orden se creó y el correo no llegó, buscar
+   `No se pudo enviar el correo de confirmación de compra` y su `order_id` en
+   los logs de Laravel.
 
 Verificación normal: `docker compose exec app php artisan test` y
 `docker compose exec app php artisan route:list --path=api`. Todos los tests usan
