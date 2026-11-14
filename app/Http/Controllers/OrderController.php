@@ -56,7 +56,8 @@ class OrderController extends Controller
             );
             $turn = $queue->authorizePurchase($event, (string) $user->id, $data['queuePass'] ?? null);
 
-            if ($items->sum('quantity') > min(6, $event->max_per_order)) {
+            $requestedQuantity = $items->sum('quantity');
+            if ($requestedQuantity > min(6, $event->max_per_order)) {
                 throw ValidationException::withMessages(['items' => 'La cantidad supera el límite del evento.']);
             }
             // La cuenta ya está bloqueada: dos intentos no pueden consumir el mismo cupo.
