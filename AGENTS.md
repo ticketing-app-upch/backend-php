@@ -1,5 +1,7 @@
 # AGENTS.md — backend-php
 
+Actualizado: 2026-10-30.
+
 ## Entrada rápida
 
 Actualizado el 13/11/2026 con el avance de revisión, Mercado y cola virtual.
@@ -71,8 +73,11 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
   Cancelación solo ADMIN: bloquear orden, evento y zonas; restaurar stock una
   vez y rechazar validación pública. Conservar órdenes, tickets y primer agotamiento.
   El endpoint anterior de compra mantiene su pago/importe sin comisión.
-- Catálogo: 15 recintos y 50 zonas en database/data/frontend-venues.json. No borrar
-  recintos históricos ni cambiar IDs/nombres de zonas que tengan ventas.
+- Catálogo: 16 recintos y 51 zonas en database/data/frontend-venues.json:
+  los 15 originales y Recinto de prueba (Lima, una zona General, capacidad 1).
+  VenueSeeder está incluido en DatabaseSeeder; cargarlo tras actualizar el código
+  con php artisan db:seed --class=VenueSeeder en el entorno correspondiente.
+  No borrar recintos históricos ni cambiar IDs/nombres de zonas con ventas.
 - Cotización Demo 3: /api/v1/dynamic-price devuelve precio base de BD. También
   /pricing/api/v1/dynamic-price; el puerto local 8000 sirve el mismo backend.
   No implementar reglas dinámicas de Demo 4 ni confiar en precios del cliente.
