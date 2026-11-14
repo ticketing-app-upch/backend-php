@@ -2,12 +2,16 @@
 
 namespace Tests\Feature;
 
+use App\Mail\PurchaseConfirmed;
 use App\Models\Event;
 use App\Models\Ticket;
 use App\Models\TicketOrder;
 use App\Models\Venue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\BuildsDemoThreeFixtures;
 use Tests\TestCase;
@@ -55,24 +59,98 @@ class FrontendCompatibilityTest extends TestCase
     {
         $owner = $this->actor('ORGANIZER');
         $payload = $this->frontendEvent();
-        $response = $this->postJson('/api/events', $payload, $this->headersFor($owner))->assertCreated()
-            ->assertJsonPath('name', $payload['name'])->assertJsonPath('status', 'PUBLICADO')
-            ->assertJsonPath('venue', 'Arena 1 — Costa Verde')->assertJsonPath('city', 'Lima')
-            ->assertJsonPath('organizerId', (string) $owner->id)->assertJsonPath('maxPerOrder', 6)
-            ->assertJsonPath('zones.0.price', 50)->assertJsonPath('zones.0.sold', 0);
+
+        $response = $this->postJson(
+            '/api/events',
+            $payload,
+            $this->headersFor($owner),
+        )->assertCreated()
+            ->assertJsonPath('name', $payload['name'])
+            ->assertJsonPath('status', 'PENDIENTE_APROBACION')
+            ->assertJsonPath('backendStatus', 'PENDING_APPROVAL')
+            ->assertJsonPath('publishedAt', null)
+            ->assertJsonPath('venue', 'Arena 1 — Costa Verde')
+            ->assertJsonPath('city', 'Lima')
+            ->assertJsonPath('organizerId', (string) $owner->id)
+            ->assertJsonPath('maxPerOrder', 6)
+            ->assertJsonPath('zones.0.price', 50)
+            ->assertJsonPath('zones.0.sold', 0);
+
         $id = $response->json('id');
-        $this->get('/api/events/'.$id.'/banner')->assertOk()
-            ->assertContent(base64_decode(substr($payload['bannerUrl'], 23)));
-        $this->get('/api/events/'.$id.'/secondary-banner')->assertOk()
-            ->assertContent(base64_decode(substr($payload['secondaryBannerUrl'], 23)));
+
+        // Mientras está pendiente, no es público.
+        $this->getJson('/api/events')->assertOk()->assertExactJson([]);
+        $this->getJson("/api/events/{$id}")->assertNotFound();
+        $this->get("/api/events/{$id}/banner")->assertNotFound();
+        $this->get("/api/events/{$id}/secondary-banner")
+            ->assertNotFound();
+
+        $adminHeaders = $this->headersFor($this->actor('ADMIN'));
+
+        // El administrador puede revisar ambos banners.
+        $this->get(
+            "/api/v1/admin/eventos/{$id}/banner",
+            $adminHeaders,
+        )->assertOk()
+            ->assertContent(
+                base64_decode(substr($payload['bannerUrl'], 23))
+            );
+
+        $this->get(
+            "/api/v1/admin/eventos/{$id}/secondary-banner",
+            $adminHeaders,
+        )->assertOk()
+            ->assertContent(
+                base64_decode(substr($payload['secondaryBannerUrl'], 23))
+            );
+
+        $this->patchJson(
+            "/api/v1/admin/eventos/{$id}/estado",
+            ['status' => 'PUBLISHED'],
+            $adminHeaders,
+        )->assertOk();
+
+        // Después de aprobar, los banners son públicos.
+        $this->get("/api/events/{$id}/banner")
+            ->assertOk()
+            ->assertContent(
+                base64_decode(substr($payload['bannerUrl'], 23))
+            );
+
+        $this->get("/api/events/{$id}/secondary-banner")
+            ->assertOk()
+            ->assertContent(
+                base64_decode(substr($payload['secondaryBannerUrl'], 23))
+            );
+
         DB::enableQueryLog();
-        $this->getJson('/api/events')->assertOk()->assertJsonPath('0.id', $id)
-            ->assertJsonMissingPath('0.content')->assertJsonMissingPath('0.secondary_content');
-        $queries = DB::getQueryLog();
-        DB::disableQueryLog();
-        $this->assertFalse(collect($queries)->contains(fn ($query) => preg_match('/^select \* from ["`]?event_banners/i', $query['query'])));
-        $this->getJson('/api/events/'.$id.'?contract=legacy')->assertOk()
-            ->assertJsonPath('status', 'PUBLISHED')->assertJsonPath('venue.name', $payload['venue']);
+
+        try {
+            $this->getJson('/api/events')
+                ->assertOk()
+                ->assertJsonPath('0.id', $id)
+                ->assertJsonPath('0.status', 'PUBLICADO')
+                ->assertJsonMissingPath('0.content')
+                ->assertJsonMissingPath('0.secondary_content');
+
+            $queries = DB::getQueryLog();
+        } finally {
+            DB::disableQueryLog();
+        }
+
+        $this->assertFalse(
+            collect($queries)->contains(
+                fn ($query) => preg_match(
+                    '/^select \* from ["`]?event_banners/i',
+                    $query['query'],
+                )
+            )
+        );
+
+        $this->getJson("/api/events/{$id}?contract=legacy")
+            ->assertOk()
+            ->assertJsonPath('status', 'PUBLISHED')
+            ->assertJsonPath('venue.name', $payload['venue']);
     }
 
     public function test_single_zone_test_venue_can_be_published_read_publicly_and_sold_out(): void
@@ -196,7 +274,7 @@ class FrontendCompatibilityTest extends TestCase
         $this->getJson('/api/admin/events', $this->headersFor($owner))->assertForbidden();
     }
 
-    public function test_order_uses_final_server_prices_without_fees_and_emits_individual_tickets(): void
+    public function test_order_uses_server_prices_and_emits_individual_tickets_without_a_fee(): void
     {
         $event = $this->publishedEvent(['city' => 'Lima']);
         [$first, $second] = $event->zones;
@@ -211,7 +289,6 @@ class FrontendCompatibilityTest extends TestCase
             ->assertJsonPath('subtotal', 175.25)->assertJsonPath('fee', 0)->assertJsonPath('total', 175.25)
             ->assertJsonCount(2, 'lines')->assertJsonCount(3, 'tickets');
         $this->assertEqualsWithDelta(175.25, array_sum(array_column($response->json('tickets'), 'total')), 0.00001);
-        $this->assertEquals(0, array_sum(array_column($response->json('tickets'), 'serviceFee')));
         $this->assertCount(3, array_unique(array_column($response->json('tickets'), 'code')));
         $this->assertSame(98, $first->fresh()->available_capacity);
         $this->assertSame(199, $second->fresh()->available_capacity);
@@ -220,7 +297,7 @@ class FrontendCompatibilityTest extends TestCase
         $this->getJson('/api/v1/tickets/'.$response->json('tickets.0.code').'/validacion')->assertOk();
     }
 
-    public function test_small_prices_keep_exact_totals_without_service_fees(): void
+    public function test_order_total_preserves_centavos_for_small_prices(): void
     {
         $event = $this->publishedEvent();
         $event->zones->first()->update(['base_price' => 0.10]);
@@ -228,12 +305,13 @@ class FrontendCompatibilityTest extends TestCase
             'items' => [['zoneId' => (string) $event->zones->first()->id, 'quantity' => 6]], 'expectedTotal' => 0.60,
         ]), $this->headersFor($this->actor()))->assertCreated()
             ->assertJsonPath('subtotal', 0.6)->assertJsonPath('fee', 0)->assertJsonPath('total', 0.6);
-        $this->assertEqualsWithDelta(0.60, array_sum(array_column($response->json('tickets'), 'total')), 0.00001);
-        $this->assertEqualsWithDelta(0, array_sum(array_column($response->json('tickets'), 'serviceFee')), 0.00001);
+        $this->assertEqualsWithDelta(0.6, array_sum(array_column($response->json('tickets'), 'total')), 0.00001);
+        $this->assertSame(0, array_sum(array_column($response->json('tickets'), 'serviceFee')));
     }
 
     public function test_idempotency_replays_without_stock_changes_and_rejects_a_different_payload(): void
     {
+        Mail::fake();
         $event = $this->publishedEvent();
         $buyer = $this->actor();
         $payload = $this->orderPayload($event);
@@ -244,6 +322,13 @@ class FrontendCompatibilityTest extends TestCase
         $this->assertDatabaseCount('ticket_orders', 1);
         $this->assertDatabaseCount('tickets', 1);
         $this->assertSame(99, $event->zones->first()->fresh()->available_capacity);
+        Mail::assertSent(PurchaseConfirmed::class, 1);
+        Mail::assertSent(
+            PurchaseConfirmed::class,
+            fn ($mail) => $mail->hasTo($buyer->email)
+                && str_contains($mail->render(), $event->title)
+                && ! str_contains($mail->render(), $first['tickets'][0]['code']),
+        );
         $this->postJson('/api/orders', $this->orderPayload($event), $this->headersFor($this->actor()))->assertCreated();
     }
 
@@ -276,6 +361,7 @@ class FrontendCompatibilityTest extends TestCase
 
     public function test_declined_payment_price_conflicts_and_insufficient_stock_leave_no_partial_purchase(): void
     {
+        Mail::fake();
         $event = $this->publishedEvent();
         $headers = $this->headersFor($this->actor());
         $this->postJson('/api/orders', $this->orderPayload($event, ['paymentResult' => 'DECLINED']), $headers)->assertStatus(402);
@@ -286,6 +372,65 @@ class FrontendCompatibilityTest extends TestCase
         $this->postJson('/api/orders', $this->orderPayload($event), $headers)->assertConflict();
         $this->assertDatabaseCount('ticket_orders', 0);
         $this->assertDatabaseCount('tickets', 0);
+        Mail::assertNothingSent();
+    }
+
+    public function test_mail_failure_is_logged_and_keeps_the_purchase_committed(): void
+    {
+        $event = $this->publishedEvent();
+        $buyer = $this->actor();
+        Mail::shouldReceive('to')->once()->with($buyer->email)->andThrow(new \RuntimeException('SMTP unreachable'));
+        Log::spy();
+
+        $order = $this->postJson('/api/orders', $this->orderPayload($event), $this->headersFor($buyer))->assertCreated();
+
+        $this->assertDatabaseCount('tickets', 1);
+        $this->assertSame(99, $event->zones->first()->fresh()->available_capacity);
+        Log::shouldHaveReceived('error')->once()->with(
+            'No se pudo enviar el correo de confirmación de compra.',
+            ['order_id' => (int) $order->json('id'), 'exception_type' => \RuntimeException::class],
+        );
+    }
+
+    public function test_gmail_sends_to_the_registered_buyer_once_per_purchase(): void
+    {
+        $sender = 'platform@gmail.example';
+        $sendUrl = 'https://gmail.googleapis.com/gmail/v1/users/'.rawurlencode($sender).'/messages/send';
+        config([
+            'mail.default' => 'gmail',
+            'mail.from.address' => $sender,
+            'services.gmail.client_id' => 'test-client-id',
+            'services.gmail.client_secret' => 'test-client-secret',
+            'services.gmail.refresh_token' => 'test-refresh-token',
+        ]);
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://oauth2.googleapis.com/token' => Http::response(['access_token' => 'test-access-token']),
+            $sendUrl => Http::response(['id' => 'gmail-message-id']),
+        ]);
+
+        $event = $this->publishedEvent();
+        $buyer = $this->actor();
+        $payload = $this->orderPayload($event);
+        $this->postJson('/api/orders', $payload, $this->headersFor($buyer))->assertCreated();
+        $this->postJson('/api/orders', $payload, $this->headersFor($buyer))->assertOk();
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn ($request) => $request->url() === 'https://oauth2.googleapis.com/token'
+            && $request['grant_type'] === 'refresh_token'
+            && $request['refresh_token'] === 'test-refresh-token');
+        Http::assertSent(function ($request) use ($buyer, $sender, $sendUrl) {
+            if ($request->url() !== $sendUrl) {
+                return false;
+            }
+
+            $message = base64_decode(strtr($request['raw'], '-_', '+/'), true);
+
+            return $request->hasHeader('Authorization', 'Bearer test-access-token')
+                && str_contains($message, 'To: '.$buyer->email)
+                && str_contains($message, '<'.$sender.'>')
+                && str_contains($message, 'Subject: Compra confirmada');
+        });
     }
 
     public function test_orders_validate_limits_zones_roles_and_account_state(): void
@@ -446,5 +591,66 @@ class FrontendCompatibilityTest extends TestCase
         $this->getJson('/api/orders/me', $this->headersFor($buyer))->assertOk()->assertJsonCount(1)
             ->assertJsonPath('0.total', 50)->assertJsonPath('0.fee', 0)
             ->assertJsonPath('0.tickets.0.code', 'legacy-existing-code');
+    }
+
+    public static function venueSpacingCases(): array
+    {
+        $cases = [];
+
+        foreach ([false, true] as $frontend) {
+            foreach ([
+                'less than 24 hours after' => [86399, 409],
+                'exactly 24 hours after' => [86400, 201],
+                'less than 24 hours before' => [-86399, 409],
+                'exactly 24 hours before' => [-86400, 201],
+            ] as $name => [$seconds, $expectedStatus]) {
+                $format = $frontend ? 'json' : 'multipart';
+
+                $cases[$format.' '.$name] = [
+                    $frontend,
+                    $seconds,
+                    $expectedStatus,
+                ];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('venueSpacingCases')]
+    public function test_both_contracts_enforce_the_same_twenty_four_hour_boundary(
+        bool $frontend,
+        int $seconds,
+        int $expectedStatus,
+    ): void {
+        $payload = $frontend
+            ? $this->frontendEvent()
+            : $this->eventPayload();
+
+        $venue = $frontend
+            ? Venue::where('name', $payload['venue'])->firstOrFail()
+            : Venue::findOrFail($payload['venueId']);
+
+        $start = now()->addDays(10);
+
+        $this->publishedEvent([
+            'venue_id' => $venue->id,
+            'starts_at' => $start,
+        ]);
+
+        $payload['startsAt'] = $start->copy()
+            ->addSeconds($seconds)
+            ->toIso8601String();
+
+        $this->postJson(
+            '/api/events',
+            $payload,
+            $this->headersFor($this->actor('ORGANIZER')),
+        )->assertStatus($expectedStatus);
+
+        $this->assertDatabaseCount(
+            'events',
+            $expectedStatus === 201 ? 2 : 1,
+        );
     }
 }

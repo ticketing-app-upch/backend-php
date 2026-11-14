@@ -1,6 +1,6 @@
 # Contexto del proyecto para IA
 
-Actualizado: 2026-10-30. Alcance de este checkout: **backend-php de AlpaTeck**.
+Actualizado: 2026-11-13. Alcance de este checkout: **backend-php de AlpaTeck**.
 Lee primero AGENTS.md y este archivo. Después consulta únicamente los archivos
 del flujo que vas a cambiar. README.md conserva los ejemplos y contratos completos.
 Si una implementación cambia, actualiza este resumen; el código y las migraciones
@@ -10,10 +10,9 @@ actuales prevalecen sobre documentos antiguos.
 
 AlpaTeck es una plataforma de venta de entradas. Roles internos: CLIENT
 (asistente), ORGANIZER (organizador) y ADMIN (administrador). El frontend Angular
-es otro repositorio; existe como hermano `../frontend-angular`, rama demo3,
-solo como referencia de contrato, sin modificarlo ni integrarlo permanentemente.
-El backlog también contempla una
-cola/anti-scalping en Python; ese microservicio no existe en este checkout.
+es otro repositorio. La rama demo4 sirve como referencia de contrato. La cola se
+integra con un servicio Python independiente cuya configuración se documenta en
+su README.
 
 La Épica 1 corresponde conjuntamente a las demos 1 y 2, según confirmación del
 usuario. Sus historias son HU-01 a HU-08: registro, login, logout, expiración,
@@ -150,9 +149,7 @@ docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
   requieren CLIENT y solo retornan propios (ajeno 404).
 - POST /api/orders (CLIENT activo): CreateOrderPayload del frontend, con eventId,
   items, expectedTotal/paymentMethod/paymentResult/idempotencyKey opcionales.
-  Recalcula precios finales de BD en centavos, sin comisión adicional; máximo 6.
-  Nuevas órdenes: fee=0, tickets service_fee=0 y total=subtotal. No recalcular
-  compras históricas ni sus reintentos idempotentes. Alineado con Angular el 2026-10-30.
+  Recalcula precios de BD en centavos. Máximo seis entradas por compra.
   DECLINED causa 402; precio distinto/stock insuficiente 409, sin escrituras parciales.
   Bloquea usuario y zonas en orden estable. Misma clave/payload devuelve orden previa
   con 200; clave reutilizada con otro payload causa 409. Primera creación 201.
@@ -171,13 +168,56 @@ docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
 - FRONTEND_URL configura shareUrl (/attendee/event/{id}) y validationUrl
   (/validar/{code}); si está vacío se usa APP_URL. Banner siempre usa APP_URL.
 
-Demo 4 pendiente: cola/turnos/anti-scalping, habilitar compras, aprobación/rechazo,
-edición de rechazados y correo de confirmación. El reporte del organizador
-propietario ya existía y se conserva; no se amplió con esos flujos.
+## Demo 4: cola virtual
 
-Límites del frontend original: useMock/useMockAuth=true, favoritos en localStorage,
-validación pública en MockStore y logout sin HTTP. Preparar backend no conecta esas
-acciones. La integración temporal solo cambia configuración de una copia aislada;
+- Solo el ORGANIZER dueño y activo habilita ventas con PATCH
+  /api/v1/eventos/{id}/habilitar-compras, en eventos publicados, futuros y con
+  cola. Se guarda purchases_enabled_at. El evento expone purchasesEnabled y
+  purchasesEnabledAt.
+- El CLIENT activo usa POST /api/v1/eventos/{id}/cola, GET con sufijo
+  /cola/estado y POST con sufijos /cola/cancelar y /pago/apertura. Se puede
+  esperar antes de la habilitación. Angular consulta cada cinco segundos.
+- El listado /api/organizers/{organizerId}/events devuelve status=PENDIENTE
+  para Angular demo4. La etiqueta efectiva sigue en displayStatus, incluida
+  VENCIDO. La API v1 conserva su contrato. El reenvío JSON acepta PENDIENTE.
+- Python ordena y firma los pases RS256 de tres minutos. Laravel verifica
+  firma, usuario, evento, vigencia y turno activo en ambas rutas de compra.
+  El pase viaja en queuePass. Se registra su consumo en queue_purchases junto
+  con la orden. Se notifica a Python después del commit y se reintenta al
+  operar la cola si falla. La idempotencia sigue devolviendo la orden original.
+- POST /api/orders aplica el total sin comisión del checkout Angular demo4
+  para eventos con y sin cola. Compras históricas conservan sus importes.
+- Las dos rutas de compra envían la confirmación al correo registrado por el
+  comprador después del commit. MAIL_MAILER=log deja constancia
+  local del mensaje. Si el envío falla, queda registrado el ID de la orden.
+  Un reintento idempotente devuelve la orden sin reenviar el correo.
+- Para enviar desde la cuenta Gmail de la plataforma, configurar
+  MAIL_MAILER=gmail, MAIL_FROM_ADDRESS con la cuenta Google autorizada,
+  MAIL_FROM_NAME, GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET y GMAIL_REFRESH_TOKEN.
+  Habilitar Gmail API en Google Cloud y autorizar únicamente el alcance
+  https://www.googleapis.com/auth/gmail.send con acceso sin conexión.
+  Con un cliente OAuth externo en Testing, el refresh token vence en siete
+  días. Configurar las credenciales en Environment del backend en Render.
+- Configurar VIRTUAL_QUEUE_URL, VIRTUAL_QUEUE_SERVICE_TOKEN y
+  VIRTUAL_QUEUE_PASS_PUBLIC_KEY. Python guarda los turnos en memoria.
+  Guarda vencimientos y cancelaciones en el archivo SQLite configurado en
+  VIRTUAL_QUEUE_OUTCOMES_DB. Mercado los cruza con queue_purchases y calcula
+  completados / (completados + vencidos + cancelados) para los eventos filtrados.
+  Anti-scalping pendiente.
+
+- Angular abre los pendientes y rechazados del dueño por GET /api/events/{id}
+  con JWT. Ese detalle privado incluye los dos banners para editar. La bandeja
+  ADMIN entrega URL de imagen firmada, válida cinco minutos mientras el evento
+  siga pendiente. Renovar la bandeja para obtener URLs nuevas.
+- Mercado acepta from/to/venue/queue y devuelve los campos de Angular junto
+  con summary, topVenues, sellOutTime y queueConversion. El reporte por evento
+  sigue en /api/events/{id}/sales-report. Angular aún debe conectar ese reporte
+  y mostrar ocupación por zona. La ficha todavía no muestra explícitamente
+  el estado del evento debajo del título. Logout en Angular sigue siendo local.
+
+Angular demo4 conserva useMock/useMockAuth=true en el repositorio. Con mocks
+desactivados usa la API de favoritos, validación pública y cola. Logout solo
+limpia la sesión local. La integración temporal solo cambia configuración de una copia aislada;
 no modificar el repositorio Angular original ni dejar esa copia al finalizar.
 
 ## Operación, pruebas y despliegue

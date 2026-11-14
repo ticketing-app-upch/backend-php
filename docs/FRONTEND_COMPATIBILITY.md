@@ -116,10 +116,9 @@ sin ventas ni órdenes, incluso si una orden anterior fue cancelada.
 
 Los IDs son los devueltos por la API, no los IDs del mock. El backend comprueba
 CLIENT activo, evento futuro publicado, zonas propias, límite del evento (máximo
-6) y stock. Desde el 2026-10-30, alineado con Angular demo3, recalcula el importe
-en centavos desde los precios finales de BD sin agregar comisión: fee=0,
-serviceFee=0 y total=subtotal. Las compras históricas y sus importes se conservan;
-los reintentos idempotentes devuelven la compra original. Un expectedTotal distinto causa
+6) y stock. Recalcula el importe en centavos desde los precios de BD. Las órdenes
+nuevas usan el total sin comisión de Angular demo4. Las órdenes históricas
+conservan el precio y la comisión registrados. Un expectedTotal distinto causa
 409 sin escrituras. La aprobación es simulada; DECLINED devuelve 402 sin compras
 ni descuentos de stock. No se reciben ni guardan tarjeta, vencimiento ni CVV en
 este endpoint: el frontend actual no los envía.
