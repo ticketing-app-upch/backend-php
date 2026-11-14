@@ -2,11 +2,12 @@
 
 ## Entrada rápida
 
-Actualizado el 13/11/2026 para `feature/revision-eventos`, con el avance de
-revisión, Mercado y cola virtual. Describe código implementado; verificar por separado merge,
-despliegue y aceptación de QA. README y documentos Demo 3 pueden conservar
-reglas anteriores: para los flujos actualizados consultar las secciones de
-Demo 4 de este archivo y contrastar con código/migraciones de la rama actual.
+Actualizado el 13/11/2026 con el avance de revisión, Mercado y cola virtual.
+El PR #21 corrigió el HTTP 500 en compras. Render muestra `main` en `c67749b`
+como activo y el usuario confirmó una compra de prueba con entrega del correo.
+Consultar `docs/PROJECT_CONTEXT.md` para ver la evidencia y los pasos de Postman.
+Contrastar las reglas de Demo 3 con las secciones de Demo 4 y el código de la
+rama que se va a cambiar.
 
 Lee `docs/PROJECT_CONTEXT.md` una vez al iniciar. Contiene el mapa del proyecto,
 los contratos y los límites del alcance. Después abre solo el controlador,
@@ -248,9 +249,10 @@ una nueva ejecución por leer este archivo ni garantía de ausencia de errores.
   Verificar aislamiento/migraciones antes de ejecutar. No usar BD habitual ni
   Render ni retirar protecciones del script. Crean fixtures y no borran datos.
   CLIENT requiere clientProfile y ORGANIZER organizerProfile para login HTTP.
-- No se ejecutó suite de este avance en PostgreSQL ni prueba de carga masiva.
-  Integración visual Angular, aceptación QA, merge y despliegue siguen sujetos
-  a verificación; no inferirlos del número de pruebas aprobadas.
+- No se ejecutó la suite de este avance en PostgreSQL ni una prueba de carga
+  masiva. La integración visual de Angular y la aceptación completa de QA siguen
+  pendientes de verificación. El estado del despliegue está en
+  `docs/PROJECT_CONTEXT.md`.
 
 ## Límites y seguridad
 
