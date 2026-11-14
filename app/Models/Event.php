@@ -49,6 +49,7 @@ class Event extends Model
             'published_at' => 'datetime',
             'max_per_order' => 'integer',
             'queue_enabled' => 'boolean',
+            'purchases_enabled_at' => 'datetime',
             'reviewed_at' => 'datetime',
             'first_sold_out_at' => 'datetime',
         ];

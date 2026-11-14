@@ -23,6 +23,7 @@ class StoreOrderRequest extends FormRequest
             'paymentMethod' => ['sometimes', 'in:CARD,WALLET'],
             'paymentResult' => ['sometimes', 'in:APPROVED,DECLINED'],
             'idempotencyKey' => ['sometimes', 'string', 'min:1', 'max:128'],
+            'queuePass' => ['sometimes', 'nullable', 'string', 'max:4096'],
         ];
     }
 

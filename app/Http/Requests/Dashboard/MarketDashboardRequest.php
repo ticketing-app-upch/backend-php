@@ -12,6 +12,21 @@ class MarketDashboardRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $aliases = [];
+        foreach (['from' => 'dateFrom', 'to' => 'dateTo'] as $alias => $field) {
+            if ($this->has($alias) && ! $this->has($field)) {
+                $aliases[$field] = $this->input($alias);
+            }
+        }
+        $queue = $this->input('queue');
+        if (! $this->has('queueEnabled') && in_array($queue, ['with', 'without'], true)) {
+            $aliases['queueEnabled'] = $queue === 'with';
+        }
+        $this->merge($aliases);
+    }
+
     public function rules(): array
     {
         return [
@@ -47,6 +62,8 @@ class MarketDashboardRequest extends FormRequest
                 'required',
                 'boolean',
             ],
+            'queue' => ['sometimes', 'required', Rule::in(['all', 'with', 'without'])],
+            'venue' => ['sometimes', 'required', 'string', 'max:255'],
         ];
     }
 }

@@ -13,6 +13,27 @@ class ReviewEventRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('status')) {
+            return;
+        }
+
+        $status = match ($this->input('estado')) {
+            'publicado' => Event::STATUS_PUBLISHED,
+            'rechazado' => Event::STATUS_REJECTED,
+            default => null,
+        };
+        if ($status === null) {
+            return;
+        }
+
+        $this->merge(['status' => $status]);
+        if ($status === Event::STATUS_REJECTED && ! $this->has('rejectionReason')) {
+            $this->merge(['rejectionReason' => $this->input('motivo')]);
+        }
+    }
+
     public function rules(): array
     {
         return [

@@ -84,6 +84,13 @@ class OrganizerEventListTest extends TestCase
             ->assertJsonPath('0.displayStatus', $displayStatus)
             ->assertJsonPath('0.rejectionReason', $reason)
             ->assertJsonPath('0.canEdit', $canEdit);
+
+        $angularStatus = $status === Event::STATUS_PENDING_APPROVAL ? 'PENDIENTE' : $displayStatus;
+        $this->getJson('/api/organizers/'.$owner->id.'/events', $this->headersFor($owner))
+            ->assertOk()
+            ->assertJsonPath('0.status', $angularStatus)
+            ->assertJsonPath('0.displayStatus', $displayStatus)
+            ->assertJsonPath('0.startsAt', $event->starts_at->toIso8601String());
     }
 
     public function test_public_catalog_does_not_expose_review_details(): void

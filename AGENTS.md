@@ -2,8 +2,8 @@
 
 ## Entrada rápida
 
-Actualizado el 13/11/2026 para `feature/revision-eventos`, commits `932f669`
-y `cb1556f`. Describe código implementado; verificar por separado merge,
+Actualizado el 13/11/2026 para `feature/revision-eventos`, con el avance de
+revisión, Mercado y cola virtual. Describe código implementado; verificar por separado merge,
 despliegue y aceptación de QA. README y documentos Demo 3 pueden conservar
 reglas anteriores: para los flujos actualizados consultar las secciones de
 Demo 4 de este archivo y contrastar con código/migraciones de la rama actual.
@@ -63,8 +63,10 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
 - Compras: pago simulado, máximo 6 entre todas las zonas y un Ticket por entrada.
   Bloquear usuario, evento y filas de zonas en orden estable; guardar snapshots
   inmutables. Revalidar vigencia del evento después de obtener su bloqueo.
-- /api/orders agrupa tickets, calcula comisión del 6% en centavos e idempotencia
-  persistente por usuario. Reintento idéntico 200; clave con otro payload 409.
+- /api/orders agrupa tickets y aplica idempotencia persistente por usuario.
+  Las compras nuevas con y sin cola usan el total sin comisión de Angular demo4.
+  Reintento idéntico 200; clave con
+  otro payload 409.
   Cancelación solo ADMIN: bloquear orden, evento y zonas; restaurar stock una
   vez y rechazar validación pública. Conservar órdenes, tickets y primer agotamiento.
   El endpoint anterior de compra mantiene su pago/importe sin comisión.
@@ -78,8 +80,8 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
   de campos; nunca persistir roles/verificationStatus enviados dentro del perfil.
 - Detalle histórico de contratos/migraciones Demo 3: docs/DEMO3_IMPLEMENTATION.md.
   La restricción anterior de no agregar aprobación/edición de rechazados quedó
-  sustituida por HU-23/24/25 implementadas. Cola, anti-scalping, correos y
-  habilitación de compras no se implementaron como parte de este avance.
+  sustituida por HU-23/24/25 implementadas. El correo se envía tras confirmar
+  la transacción. Anti-scalping sigue pendiente.
 
 ## Avance de HU y mapa para revisión
 
@@ -117,7 +119,7 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
   409 “El evento ya venció”; ya revisado 409, desconocido 404, sin JWT 401/rol 403.
 - HU-11: listado propio, vacío si no tiene eventos; displayStatus y motivo de
   rechazo para dueño/ADMIN. canEdit solo para dueño activo de REJECTED. Reporte
-  de ventas solo dueño de PUBLISHED. HU-22 no está implementada aquí.
+  de ventas solo dueño de PUBLISHED. HU-22 se implementa con la cola virtual.
 - ORGANIZER: GET /api/v1/eventos/mios; GET/PUT /api/v1/eventos/{id};
   alias de edición PUT/PATCH /api/events/{id}. Multipart editado mediante POST
   con _method=PUT; JSON usa PUT. Conservar formatos legacy/EventItem existentes.
@@ -125,10 +127,11 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
   y PATCH /api/v1/admin/eventos/{id}/estado; payload status=PUBLISHED o REJECTED
   y rejectionReason en rechazo. Listado incluye organizador, recinto y cola;
   detalle agrega descripción, dos banners, mapa del recinto y precios por zona.
-- Imágenes privadas: sufijos /banner y /secondary-banner sobre detalle propio
-  o ADMIN, con JWT/permisos y Cache-Control private, no-store. Angular debe
-  pedirlas con Authorization y usar Blob. Publicados conservan las rutas
-  públicas /api/events/{id}/banner y /secondary-banner; no cargar Base64 en listas.
+- Imágenes privadas: rutas existentes con JWT y no-store. La bandeja ADMIN
+  genera enlaces de cinco minutos limitados al banner de un evento pendiente.
+  GET /api/events/{id} con JWT del organizador dueño abre sus pendientes y
+  rechazados con sus banners para el formulario. Sin JWT, solo abre publicados.
+  Los listados conservan referencias a imágenes.
 - Archivos: EventController, AdminEventController; requests Event/StoreEventRequest,
   Event/UpdateEventRequest, Admin/IndexEventReviewRequest, Admin/ReviewEventRequest;
   resources EventResource/AdminEventResource y modelo Event. Relaciones cargadas
@@ -168,13 +171,26 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
   futuro; cero horas válido. No inferir hitos históricos a partir del stock.
 - Migración 2026_11_11_000002_add_first_sold_out_at_to_events_table.php: timestamp
   nullable, cast datetime en Event. Aplicar migraciones al desplegar.
-- Pendiente acordado para después: conversión de cola COMPLETED frente a EXPIRED
-  y CANCELLED. queueConversion devuelve available=false, valores null y motivo.
-  Requiere contrato/conteos por evento y retención de estados finales del servicio
-  Python; acordar fórmula y periodo. Tickets vendidos no equivalen a turnos.
-  No presentarlo como implementado ni como exclusión definitiva aprobada por QA.
-- queueEnabled solo persiste configuración. No afirmar que este avance implementa
-  turnos, purchase_pass, habilitación de ventas, anti-scalping o gráficos Angular.
+- Conversión de cola: contar órdenes con pase consumido en queue_purchases y
+  turnos vencidos y cancelados por evento en el archivo SQLite de Python.
+  Deducir cualquier turno ya comprado de los resultados de Python. El denominador
+  suma completados, vencidos y cancelados. Los filtros seleccionan los eventos
+  por fecha de inicio. El mismo endpoint entrega los alias que espera Angular.
+
+### HU-18, HU-19, HU-22, HU-27, HU-28 y HU-29
+
+- VirtualQueueController maneja las rutas de cola, apertura de pago y
+  habilitación irreversible de compras. VirtualQueue concentra la comunicación
+  autenticada con Python y la verificación del pase RS256.
+- Python conserva turnos en memoria, con una instancia, FIFO, tres admisiones
+  por cinco segundos y tres admitidos activos por evento. Los pases duran
+  180 segundos. El vencimiento y la cancelación liberan el cupo.
+- Las dos APIs de compra exigen queuePass para eventos con cola y registran
+  su consumo en queue_purchases en la misma transacción que la orden. Laravel
+  confirma al servicio tras el commit y reintenta en la siguiente operación de
+  cola si falla. No marcar el turno COMPLETED antes de confirmar la venta.
+- Probar con VirtualQueueTest y las pruebas unitarias del servicio Python.
+  Consultar docs/PROJECT_CONTEXT.md para variables y rutas públicas.
 
 ## Desarrollo y verificación
 

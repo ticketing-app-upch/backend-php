@@ -20,7 +20,7 @@ class StoreEventRequest extends FormRequest
                 'name' => ['required', 'string', 'min:4', 'max:255'],
                 'description' => ['required', 'string', 'min:20'],
                 'category' => ['required', 'in:CONCIERTO,TEATRO,DEPORTE,CONFERENCIA,FESTIVAL'],
-                'status' => ['required', 'in:PUBLICADO'],
+                'status' => ['required', 'in:PUBLICADO,PENDIENTE'],
                 'queueEnabled' => ['sometimes', 'boolean'],
                 'venue' => ['required', 'string', 'exists:venues,name'],
                 'city' => ['required', 'string', 'max:255'],

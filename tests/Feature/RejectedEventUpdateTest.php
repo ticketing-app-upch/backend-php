@@ -119,7 +119,8 @@ class RejectedEventUpdateTest extends TestCase
             ->assertJsonPath('0.status', 'PUBLICADO');
     }
 
-    public function test_json_edit_cannot_publish_or_change_owner(): void
+    #[DataProvider('frontendUpdateStatuses')]
+    public function test_json_edit_cannot_publish_or_change_owner(string $status): void
     {
         $event = $this->rejectedEvent();
         $venue = Venue::with('zones')->findOrFail($event->venue_id);
@@ -131,7 +132,7 @@ class RejectedEventUpdateTest extends TestCase
             'name' => 'Evento JSON corregido',
             'description' => 'Descripción corregida y completa del evento.',
             'category' => 'CONCIERTO',
-            'status' => 'PUBLICADO',
+            'status' => $status,
             'venue' => $venue->name,
             'city' => $venue->city,
             'venueCapacity' => $venue->capacity,
@@ -173,6 +174,11 @@ class RejectedEventUpdateTest extends TestCase
             $event->organizer_id,
             $event->fresh()->organizer_id,
         );
+    }
+
+    public static function frontendUpdateStatuses(): array
+    {
+        return [['PUBLICADO'], ['PENDIENTE']];
     }
 
     public static function forbiddenStates(): array

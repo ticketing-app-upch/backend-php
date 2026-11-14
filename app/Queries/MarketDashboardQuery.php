@@ -122,6 +122,8 @@ class MarketDashboardQuery
 
         if (isset($filters['venueId'])) {
             $query->where('e.venue_id', $filters['venueId']);
+        } elseif (isset($filters['venue'])) {
+            $query->where('e.venue_name', $filters['venue']);
         }
 
         if (array_key_exists('queueEnabled', $filters)) {

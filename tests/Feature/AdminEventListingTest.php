@@ -71,6 +71,20 @@ class AdminEventListingTest extends TestCase
         )->assertOk()->assertExactJson([]);
     }
 
+    public function test_review_list_banners_can_be_loaded_by_the_browser_until_the_signature_expires(): void
+    {
+        $event = $this->pendingEvent();
+        $bytes = file_get_contents(base_path('tests/Fixtures/banner.jpg'));
+        $event->banner()->create(['content' => base64_encode($bytes), 'secondary_content' => base64_encode($bytes)]);
+
+        $review = $this->getJson(self::URL, $this->headersFor($this->actor('ADMIN')))->assertOk()->json('0');
+        $this->get($review['bannerUrl'])->assertOk()->assertContent($bytes);
+        $this->get($review['secondaryBannerUrl'])->assertOk()->assertContent($bytes);
+        $this->get(str_replace('/banner?', '/secondary-banner?', $review['bannerUrl']))->assertForbidden();
+        $this->travel(6)->minutes();
+        $this->get($review['bannerUrl'])->assertForbidden();
+    }
+
     public function test_detail_exposes_venue_zones_and_private_image_urls(): void
     {
         $event = $this->pendingEvent();

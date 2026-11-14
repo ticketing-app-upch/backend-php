@@ -9,6 +9,7 @@ use App\Http\Requests\Event\StoreEventRequest;
 use App\Http\Requests\Event\UpdateEventRequest;
 use App\Http\Resources\EventResource;
 use App\Http\Resources\SalesReportResource;
+use App\Mail\PurchaseConfirmed;
 use App\Http\Resources\TicketResource;
 use App\Models\Event;
 use App\Models\EventZone;
@@ -16,6 +17,7 @@ use App\Models\Ticket;
 use App\Models\TicketOrder;
 use App\Models\User;
 use App\Models\Venue;
+use App\Support\VirtualQueue;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
@@ -71,16 +73,24 @@ class EventController extends Controller
         return response()->json(EventResource::collection($events));
     }
 
-    public function show(string $id): JsonResponse
+    public function show(string $id, Request $request): JsonResponse
     {
         $event = Event::with(['zones', 'venue.zones'])->withExists(['banner',
             'banner as secondary_banner_exists' => fn ($query) => $query->whereNotNull('secondary_content')])
             ->where('status', 'PUBLISHED')->find($id);
-        if (! $event) {
-            return response()->json(['message' => 'Evento no disponible'], 404);
+        if ($event) {
+            return response()->json(new EventResource($event));
         }
 
-        return response()->json(new EventResource($event));
+        $owner = $request->bearerToken() ? $request->user('api') : null;
+        $private = $owner?->role->name === 'ORGANIZER' ? Event::with(['zones', 'venue.zones', 'banner'])
+            ->where('organizer_id', $owner->id)
+            ->whereIn('status', [Event::STATUS_PENDING_APPROVAL, Event::STATUS_REJECTED])
+            ->find($id) : null;
+
+        return $private
+            ? response()->json(new EventResource($private))->header('Cache-Control', 'private, no-store')
+            : response()->json(['message' => 'Evento no disponible'], 404);
     }
 
     public function banner(string $id): Response
@@ -154,12 +164,12 @@ class EventController extends Controller
         return response('', 204);
     }
 
-    public function purchaseTickets(string $id, PurchaseTicketRequest $request): JsonResponse
+    public function purchaseTickets(string $id, PurchaseTicketRequest $request, VirtualQueue $queue): JsonResponse
     {
         $data = $request->validated();
         $items = $data['items'] ?? [['zoneId' => $data['zoneId'], 'quantity' => $data['quantity']]];
         try {
-            $tickets = DB::transaction(function () use ($request, $items, $id) {
+            $tickets = DB::transaction(function () use ($request, $queue, $data, $items, $id) {
                 $user = User::whereKey($request->user('api')->id)->lockForUpdate()->firstOrFail();
                 if (! $user->active) {
                     abort(403, 'Tu cuenta está desactivada. Contacta al administrador');
@@ -174,6 +184,8 @@ class EventController extends Controller
                     404,
                     'Evento no disponible',
                 );
+                $turn = $queue->authorizePurchase($event, (string) $user->id, $data['queuePass'] ?? null);
+
                 if (array_sum(array_column($items, 'quantity')) > min(6, $event->max_per_order)) {
                     throw ValidationException::withMessages(['items' => 'La cantidad supera el límite del evento.']);
                 }
@@ -219,6 +231,12 @@ class EventController extends Controller
                 }
 
                 $event->recordFirstSoldOut();
+                if ($turn !== null) {
+                    $queue->recordPurchase($event, $order->id, $turn);
+                    DB::afterCommit(fn () => $queue->notifyCommittedChange($event->id));
+                }
+
+                PurchaseConfirmed::sendAfterCommit($order, $user->email);
 
                 return $tickets->load('eventZone.event');
             }, 3);

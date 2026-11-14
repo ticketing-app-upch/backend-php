@@ -55,6 +55,7 @@ class UpdateEventRequest extends StoreEventRequest
                 Rule::in([
                     'PUBLICADO',
                     'RECHAZADO',
+                    'PENDIENTE',
                     'PENDIENTE_APROBACION',
                 ]),
             ];

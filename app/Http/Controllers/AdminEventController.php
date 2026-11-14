@@ -84,7 +84,7 @@ class AdminEventController extends Controller
     public function index(IndexEventReviewRequest $request): JsonResponse
     {
         $events = $this->pendingEvents()
-            ->with(['organizer:id,full_name', 'venue.zones'])
+            ->with(['organizer:id,full_name', 'venue.zones', 'zones'])
             ->withExists([
                 'banner',
                 'banner as secondary_banner_exists' => fn ($query) => $query
@@ -94,7 +94,7 @@ class AdminEventController extends Controller
             ->orderBy('id')
             ->get();
 
-        return response()->json(AdminEventResource::collection($events));
+        return response()->json(AdminEventResource::collection($events))->header('Cache-Control', 'private, no-store');
     }
 
     public function show(string $id): JsonResponse
@@ -121,6 +121,11 @@ class AdminEventController extends Controller
     public function secondaryBanner(string $id): Response
     {
         return $this->privateImage($id, true);
+    }
+
+    public function signedImage(string $id, string $image): Response
+    {
+        return $this->privateImage($id, $image === 'secondary-banner');
     }
 
     private function pendingEvents(): Builder

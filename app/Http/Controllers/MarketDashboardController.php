@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Dashboard\MarketDashboardRequest;
 use App\Queries\MarketDashboardQuery;
+use App\Support\VirtualQueue;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
@@ -13,6 +14,7 @@ class MarketDashboardController extends Controller
     public function __invoke(
         MarketDashboardRequest $request,
         MarketDashboardQuery $query,
+        VirtualQueue $queue,
     ): JsonResponse {
         $filters = $request->validated();
 
@@ -21,6 +23,8 @@ class MarketDashboardController extends Controller
             $sold = (int) $event->tickets_sold;
 
             return [
+                'id' => (string) $event->id,
+                'queueEnabled' => (bool) $event->queue_enabled,
                 'venueId' => $event->venue_id === null
                     ? null
                     : (string) $event->venue_id,
@@ -108,8 +112,35 @@ class MarketDashboardController extends Controller
         $soldCategories = $categories
             ->filter(fn (array $category) => $category['ticketsSold'] > 0)
             ->values();
+        $summary = $this->summarize($events);
+        $sellOut = $this->sellOutTime($events);
+        $conversion = $queue->conversion($events->where('queueEnabled', true)->pluck('id'));
+        $frontendGroup = fn (array $group, string $label) => $group + [
+            'name' => $group[$label],
+            'events' => $group['eventCount'],
+            'tickets' => $group['ticketsSold'],
+            'occupancy' => $group['averageOccupancyPercentage'] / 100,
+            'averageTicket' => $group['averageTicketPrice'],
+        ];
 
         return response()->json([
+            'events' => $summary['eventCount'],
+            'tickets' => $summary['ticketsSold'],
+            'revenue' => $summary['revenue'],
+            'occupancy' => ($summary['averageOccupancyPercentage'] ?? 0) / 100,
+            'monthly' => $monthlySales->map(fn (array $month) => [
+                'label' => $month['month'], 'tickets' => $month['ticketsSold'],
+            ])->all(),
+            'heatmap' => $heatmap->groupBy('category')->map(function (Collection $days, string $category) {
+                $values = array_fill(0, 7, 0);
+                foreach ($days as $day) {
+                    $values[$day['weekday'] % 7] = $day['ticketsSold'];
+                }
+
+                return ['category' => $category, 'days' => $values];
+            })->values()->all(),
+            'averageSelloutHours' => $sellOut['averageHours'],
+            'queue' => array_intersect_key($conversion, array_flip(['completed', 'expired', 'cancelled'])),
             'filters' => [
                 'dateFrom' => $filters['dateFrom'] ?? null,
                 'dateTo' => $filters['dateTo'] ?? null,
@@ -122,7 +153,7 @@ class MarketDashboardController extends Controller
                     : null,
             ],
             'empty' => $events->isEmpty(),
-            'summary' => $this->summarize($events),
+            'summary' => $summary,
             'topVenues' => [
                 'byEvents' => $this->top(
                     $venues,
@@ -145,8 +176,8 @@ class MarketDashboardController extends Controller
                 'ticketsSold',
                 'category',
             ),
-            'venues' => $venues->all(),
-            'categories' => $categories->all(),
+            'venues' => $venues->map(fn (array $group) => $frontendGroup($group, 'venueName'))->all(),
+            'categories' => $categories->map(fn (array $group) => $frontendGroup($group, 'category'))->all(),
             'categoryDistribution' => $soldCategories->map(
                 fn (array $category) => [
                     'category' => $category['category'],
@@ -155,15 +186,8 @@ class MarketDashboardController extends Controller
             )->all(),
             'monthlySales' => $monthlySales->all(),
             'salesHeatmap' => $heatmap->all(),
-            'sellOutTime' => $this->sellOutTime($events),
-            'queueConversion' => [
-                'available' => false,
-                'completed' => null,
-                'expired' => null,
-                'cancelled' => null,
-                'conversionPercentage' => null,
-                'reason' => 'Pendiente de integrar los estados del servicio de cola.',
-            ],
+            'sellOutTime' => $sellOut,
+            'queueConversion' => $conversion,
             'definitions' => [
                 'timezone' => 'America/Lima',
                 'dateRangeAppliesTo' => 'EVENT_START',

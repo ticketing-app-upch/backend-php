@@ -14,7 +14,8 @@ class EventResource extends JsonResource
     public function toArray(Request $request): array
     {
         $legacy = $request->query('contract') === 'legacy'
-            || $request->is('api/v1/eventos/*', 'api/v1/favoritos')
+            || $request->is('api/v1/favoritos')
+            || ($request->is('api/v1/eventos/*') && ! $request->is('api/v1/eventos/*/habilitar-compras'))
             || ($request->isMethod('POST') && ! $request->exists('name'));
         $user = $request->user('api');
         $isOwner = $user !== null
@@ -45,6 +46,10 @@ class EventResource extends JsonResource
             'DRAFT' => 'BORRADOR',
             default => 'FINALIZADO',
         };
+        $frontendStatus = ($request->is('api/organizers/*/events') || $this->relationLoaded('banner'))
+            && $this->status === Event::STATUS_PENDING_APPROVAL
+            ? 'PENDIENTE'
+            : $status;
         $result = [
             'id' => (string) $this->id,
             'venueId' => $this->venue_id === null ? null : (string) $this->venue_id,
@@ -66,6 +71,8 @@ class EventResource extends JsonResource
             'venue' => new VenueResource($this->whenLoaded('venue')),
             'zones' => EventZoneResource::collection($this->whenLoaded('zones')),
             'queueEnabled' => $this->queue_enabled,
+            'purchasesEnabled' => ! $this->queue_enabled || $this->purchases_enabled_at !== null,
+            'purchasesEnabledAt' => $this->purchases_enabled_at?->toIso8601String(),
             'displayStatus' => $status,
             'rejectionReason' => $this->when($canViewReview, fn () => $this->rejection_reason),
             'reviewedAt' => $this->when($canViewReview, fn () => $this->reviewed_at?->toIso8601String()),
@@ -76,8 +83,14 @@ class EventResource extends JsonResource
             return $result;
         }
 
+        if ($isOwner && $this->status !== Event::STATUS_PUBLISHED && $this->relationLoaded('banner')) {
+            $result['bannerUrl'] = $this->banner?->content ? 'data:image/jpeg;base64,'.$this->banner->content : null;
+            $result['secondaryBannerUrl'] = $this->banner?->secondary_content ? 'data:image/jpeg;base64,'.$this->banner->secondary_content : null;
+            $bannerUrl = $result['bannerUrl'];
+        }
+
         return array_replace($result, [
-            'name' => $this->title, 'status' => $status, 'backendStatus' => $this->status,
+            'name' => $this->title, 'status' => $frontendStatus, 'backendStatus' => $this->status,
             'venue' => $this->venue_name, 'venueDetails' => $result['venue'],
             'city' => $this->city ?: ($this->resource->relationLoaded('venue') ? $this->venue?->city : ''),
             'publishedAt' => ($this->published_at ?? ($this->status === Event::STATUS_PUBLISHED

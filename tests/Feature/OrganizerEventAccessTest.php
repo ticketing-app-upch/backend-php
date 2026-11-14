@@ -76,6 +76,15 @@ class OrganizerEventAccessTest extends TestCase
 
         $this->getJson("/api/events/{$event->id}")
             ->assertNotFound();
+
+        $this->getJson("/api/events/{$event->id}", $this->headersFor($event->organizer))
+            ->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonPath('name', $event->title)
+            ->assertJsonPath('bannerUrl', 'data:image/jpeg;base64,'.base64_encode($bytes));
+
+        $this->getJson("/api/events/{$event->id}", $this->headersFor($this->actor('ORGANIZER')))
+            ->assertNotFound();
     }
 
     public static function restrictedActors(): array
