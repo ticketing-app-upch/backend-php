@@ -333,5 +333,18 @@
         "capacity": 150
       }
     ]
+  },
+  {
+    "id": "recinto-prueba",
+    "name": "Recinto de prueba",
+    "address": "Lima",
+    "city": "Lima",
+    "map": null,
+    "zones": [
+      {
+        "name": "General",
+        "capacity": 1
+      }
+    ]
   }
 ]

@@ -153,6 +153,45 @@ class FrontendCompatibilityTest extends TestCase
             ->assertJsonPath('venue.name', $payload['venue']);
     }
 
+    public function test_single_zone_test_venue_can_be_published_read_publicly_and_sold_out(): void
+    {
+        $venue = Venue::with('zones')->where('slug', 'recinto-prueba')->sole();
+        $payload = $this->frontendEvent([
+            'venue' => $venue->name, 'city' => $venue->city, 'venueCapacity' => 1,
+            'zones' => [['id' => 'venue-recinto-prueba-0', 'name' => 'General',
+                'capacity' => 1, 'sold' => 0, 'price' => 50]],
+        ]);
+        $created = $this->postJson('/api/events', $payload, $this->headersFor($this->actor('ORGANIZER')))
+            ->assertCreated()->assertJsonPath('venue', 'Recinto de prueba')
+            ->assertJsonPath('venueCapacity', 1)->assertJsonCount(1, 'zones')
+            ->assertJsonPath('zones.0.name', 'General')->assertJsonPath('zones.0.capacity', 1);
+        $event = Event::with('zones')->findOrFail($created->json('id'));
+
+        $this->app['auth']->forgetGuards();
+        $this->app['tymon.jwt']->unsetToken();
+        $this->getJson('/api/events/'.$event->id)->assertOk()
+            ->assertJsonPath('status', 'PUBLICADO')->assertJsonPath('zones.0.availableCapacity', 1);
+
+        $this->postJson('/api/orders', $this->orderPayload($event), $this->headersFor($this->actor()))
+            ->assertCreated()->assertJsonCount(1, 'tickets');
+        $this->postJson('/api/orders', $this->orderPayload($event), $this->headersFor($this->actor()))
+            ->assertConflict()->assertJsonPath('message', 'Aforo insuficiente para la cantidad solicitada');
+        $this->assertDatabaseCount('tickets', 1);
+        $this->assertDatabaseCount('ticket_orders', 1);
+        $this->assertSame(0, $event->zones->sole()->fresh()->available_capacity);
+        $this->getJson('/api/events/'.$event->id)->assertOk()->assertJsonPath('status', 'AGOTADO');
+    }
+
+    public function test_single_zone_payload_cannot_omit_other_zones_of_a_larger_venue(): void
+    {
+        $payload = $this->frontendEvent();
+        $payload['zones'] = [$payload['zones'][0]];
+        $this->postJson('/api/events', $payload, $this->headersFor($this->actor('ORGANIZER')))
+            ->assertUnprocessable()->assertJsonValidationErrors('zones')
+            ->assertJsonPath('errors.zones.0', 'Las zonas y aforos deben coincidir exactamente con el recinto.');
+        $this->assertDatabaseCount('events', 0);
+    }
+
     public static function invalidFrontendEvents(): array
     {
         return [
@@ -166,6 +205,7 @@ class FrontendCompatibilityTest extends TestCase
             'invalid jpeg' => ['bannerUrl', 'data:image/jpeg;base64,YWJj', 'bannerUrl'],
             'remote image' => ['secondaryBannerUrl', 'https://example.test/image.jpg', 'secondaryBannerUrl'],
             'existing event id' => ['id', '1', 'id'],
+            'no zones' => ['zones', [], 'zones'],
         ];
     }
 
@@ -292,6 +332,33 @@ class FrontendCompatibilityTest extends TestCase
         $this->postJson('/api/orders', $this->orderPayload($event), $this->headersFor($this->actor()))->assertCreated();
     }
 
+    public function test_existing_orders_keep_historical_fees_on_read_and_idempotent_replay(): void
+    {
+        $event = $this->publishedEvent();
+        $buyer = $this->actor();
+        $payload = $this->orderPayload($event);
+        // Simula una compra histórica cuyo total confirmado incluía el recargo.
+        $payload['expectedTotal'] = 53;
+        $items = [['zoneId' => (int) $event->zones->first()->id, 'quantity' => 1]];
+        $historicalHash = hash('sha256', json_encode([
+            'eventId' => (int) $event->id, 'items' => $items, 'expectedTotal' => 5300,
+            'paymentMethod' => 'CARD', 'paymentResult' => 'APPROVED',
+        ], JSON_THROW_ON_ERROR));
+        $createPayload = array_replace($payload, ['expectedTotal' => 50]);
+        $order = $this->postJson('/api/orders', $createPayload, $this->headersFor($buyer))->assertCreated()->json();
+        DB::table('ticket_orders')->where('id', $order['id'])->update([
+            'fee' => 3, 'total' => 53, 'request_hash' => $historicalHash,
+        ]);
+        DB::table('tickets')->where('ticket_order_id', $order['id'])->update(['service_fee' => 3, 'total_price' => 53]);
+        $this->getJson('/api/orders/'.$order['id'], $this->headersFor($buyer))->assertOk()
+            ->assertJsonPath('fee', 3)->assertJsonPath('total', 53)
+            ->assertJsonPath('tickets.0.serviceFee', 3)->assertJsonPath('tickets.0.total', 53);
+        $this->postJson('/api/orders', $payload, $this->headersFor($buyer))->assertOk()
+            ->assertJsonPath('id', $order['id'])->assertJsonPath('fee', 3)->assertJsonPath('total', 53);
+        $this->assertSame(99, $event->zones->first()->fresh()->available_capacity);
+        $this->assertDatabaseCount('ticket_orders', 1);
+    }
+
     public function test_declined_payment_price_conflicts_and_insufficient_stock_leave_no_partial_purchase(): void
     {
         Mail::fake();
@@ -299,6 +366,8 @@ class FrontendCompatibilityTest extends TestCase
         $headers = $this->headersFor($this->actor());
         $this->postJson('/api/orders', $this->orderPayload($event, ['paymentResult' => 'DECLINED']), $headers)->assertStatus(402);
         $this->postJson('/api/orders', $this->orderPayload($event, ['expectedTotal' => 1]), $headers)->assertConflict();
+        $this->postJson('/api/orders', $this->orderPayload($event, ['expectedTotal' => 53]), $headers)
+            ->assertConflict()->assertJsonPath('message', 'El precio cambió. Solicita una nueva cotización antes de confirmar.');
         $event->zones->first()->update(['available_capacity' => 0]);
         $this->postJson('/api/orders', $this->orderPayload($event), $headers)->assertConflict();
         $this->assertDatabaseCount('ticket_orders', 0);
@@ -457,7 +526,7 @@ class FrontendCompatibilityTest extends TestCase
         $this->postJson('/api/v1/dynamic-price', [])->assertUnprocessable();
     }
 
-    public function test_frontend_registration_preserves_profile_details_without_exposing_internal_fields(): void
+    public function test_frontend_registration_ignores_extra_fields_without_exposing_internal_fields(): void
     {
         $this->postJson('/api/auth/register', [
             'fullName' => 'Cliente Demo', 'email' => 'cliente@example.test', 'password' => 'TestPass123!',
@@ -465,11 +534,13 @@ class FrontendCompatibilityTest extends TestCase
             'profile' => ['docType' => 'DNI', 'docNumber' => '12345678', 'country' => 'Perú', 'city' => 'Lima',
                 'district' => '', 'hasPeruvianNationality' => false, 'gender' => 'F', 'phoneCode' => '+51', 'phone' => '987654321',
                 'role' => 'ADMIN'],
-        ])->assertCreated()->assertJsonPath('user.profile.city', 'Lima')->assertJsonPath('user.marketingOptIn', false)
+        ])->assertCreated()->assertJsonPath('user.profile.docNumber', '12345678')
+            ->assertJsonMissingPath('user.profile.city')->assertJsonMissingPath('user.marketingOptIn')
             ->assertJsonMissingPath('user.password')->assertJsonMissingPath('user.role_id')
             ->assertJsonMissingPath('user.profile.role')->assertJsonMissingPath('user.active');
         $this->postJson('/api/auth/login', ['email' => 'cliente@example.test', 'password' => 'TestPass123!', 'remember' => true])
-            ->assertOk()->assertJsonPath('user.profile.phone', '987654321');
+            ->assertOk()->assertJsonPath('user.profile.docNumber', '12345678')
+            ->assertJsonMissingPath('user.profile.phone')->assertJsonMissingPath('user.marketingOptIn');
     }
 
     public function test_order_issuance_failure_rolls_back_order_tickets_and_capacity(): void

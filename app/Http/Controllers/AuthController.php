@@ -11,7 +11,6 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 class AuthController extends Controller
@@ -52,22 +51,16 @@ class AuthController extends Controller
                     'role_id' => $role->id,
                     'active' => true,
                     'terms_accepted_at' => now(),
-                    'marketing_opt_in' => $data['marketingOptIn'] ?? null,
                 ]);
 
                 if ($role->name === 'CLIENT') {
                     $user->clientProfile()->create([
                         'doc_number' => $data['profile']['docNumber'],
-                        'details' => Arr::only($data['profile'], [
-                            'country', 'city', 'district', 'hasPeruvianNationality', 'docType', 'gender', 'phoneCode', 'phone',
-                        ]),
                     ]);
                 } else {
                     $user->organizerProfile()->create([
                         'tax_id' => $data['organizer']['taxId'],
-                        'details' => Arr::only($data['organizer'], [
-                            'orgType', 'displayName', 'legalName', 'repName', 'phone', 'country', 'city', 'website',
-                        ]),
+                        'details' => ['displayName' => $data['organizer']['displayName']],
                     ]);
                 }
 

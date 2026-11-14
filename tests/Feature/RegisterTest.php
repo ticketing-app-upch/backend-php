@@ -34,7 +34,7 @@ class RegisterTest extends TestCase
             'acceptedTerms' => true,
             ...($role === 'CLIENT'
                 ? ['profile' => ['docNumber' => '01234567']]
-                : ['organizer' => ['taxId' => '20123456789']]),
+                : ['organizer' => ['displayName' => 'Eventos SAC', 'taxId' => '20123456789']]),
         ];
     }
 
@@ -70,18 +70,20 @@ class RegisterTest extends TestCase
         $this->postJson('/api/auth/register', $payload)
             ->assertCreated()
             ->assertJsonPath('user.organizer.taxId', '20123456789')
-            ->assertJsonMissingPath('user.organizer.displayName')
+            ->assertJsonPath('user.organizer.displayName', 'Eventos SAC')
             ->assertJsonMissingPath('user.organizer.orgType')
             ->assertJsonMissingPath('user.organizer.verificationStatus')
             ->assertJsonMissingPath('user.profile')
             ->assertJsonMissingPath('user.password');
 
         $this->assertSame(User::sole()->id, OrganizerProfile::sole()->user_id);
+        $this->assertSame(['displayName' => 'Eventos SAC'], OrganizerProfile::sole()->details);
         $this->assertDatabaseCount('client_profiles', 0);
         auth('api')->forgetUser();
         $this->postJson('/api/auth/login', [
             'email' => $payload['email'], 'password' => $payload['password'],
-        ])->assertOk()->assertJsonPath('user.organizer.taxId', '20123456789');
+        ])->assertOk()->assertJsonPath('user.organizer.taxId', '20123456789')
+            ->assertJsonPath('user.organizer.displayName', 'Eventos SAC');
     }
 
     public static function invalidFields(): array
@@ -101,7 +103,12 @@ class RegisterTest extends TestCase
             'long DNI' => ['CLIENT', 'profile.docNumber', '123456789'],
             'alphabetic DNI' => ['CLIENT', 'profile.docNumber', '1234567A'],
             'numeric DNI' => ['CLIENT', 'profile.docNumber', 12345678],
-            'other document' => ['CLIENT', 'profile.docType', 'CE'],
+            'missing company name' => ['ORGANIZER', 'organizer.displayName', null],
+            'empty company name' => ['ORGANIZER', 'organizer.displayName', ''],
+            'blank company name' => ['ORGANIZER', 'organizer.displayName', '   '],
+            'short company name' => ['ORGANIZER', 'organizer.displayName', 'A'],
+            'oversized company name' => ['ORGANIZER', 'organizer.displayName', str_repeat('a', 256)],
+            'numeric company name' => ['ORGANIZER', 'organizer.displayName', 123456],
             'missing RUC' => ['ORGANIZER', 'organizer.taxId', null],
             'DNI as RUC' => ['ORGANIZER', 'organizer.taxId', '12345678'],
             'long RUC' => ['ORGANIZER', 'organizer.taxId', '201234567890'],
@@ -290,49 +297,43 @@ class RegisterTest extends TestCase
         $this->assertDatabaseCount('organizer_profiles', 1);
     }
 
-    public function test_optional_frontend_client_fields_are_preserved_in_details(): void
+    public function test_extra_client_registration_fields_are_ignored(): void
     {
         $payload = $this->payload();
         $payload['marketingOptIn'] = true;
         $payload['profile'] += [
+            'docType' => 'DNI',
             'country' => 'PE', 'city' => 'Lima', 'district' => 'Miraflores',
             'hasPeruvianNationality' => true, 'gender' => 'M',
             'phoneCode' => '+51', 'phone' => '987654321',
         ];
+        $payload['organizer'] = ['displayName' => 'Otra empresa', 'taxId' => '20123456789', 'phone' => '987654321'];
 
         $response = $this->postJson('/api/auth/register', $payload)->assertCreated()
-            ->assertJsonPath('user.marketingOptIn', true)
-            ->assertJsonMissingPath('user.acceptedTerms');
-        foreach (array_keys($payload['profile']) as $field) {
-            $response->assertJsonPath("user.profile.{$field}", $payload['profile'][$field]);
-        }
-        $this->assertEqualsCanonicalizing(
-            ['id', 'user_id', 'doc_number', 'details', 'created_at', 'updated_at'],
-            array_keys(ClientProfile::sole()->getAttributes()),
-        );
-        $this->assertEqualsCanonicalizing(
-            ['id', 'full_name', 'email', 'password', 'role_id', 'active', 'terms_accepted_at', 'marketing_opt_in', 'created_at', 'updated_at'],
-            array_keys(User::sole()->getAttributes()),
-        );
+            ->assertJsonMissingPath('user.marketingOptIn')
+            ->assertJsonMissingPath('user.acceptedTerms')
+            ->assertJsonMissingPath('user.organizer');
+        $this->assertSame(['docNumber' => '01234567'], $response->json('user.profile'));
+        $this->assertNull(ClientProfile::sole()->details);
+        $this->assertNull(User::sole()->marketing_opt_in);
+        $this->assertDatabaseCount('organizer_profiles', 0);
     }
 
-    public function test_optional_frontend_organizer_fields_are_preserved_in_details(): void
+    public function test_extra_organizer_registration_fields_are_ignored(): void
     {
         $payload = $this->payload('ORGANIZER');
         $payload['organizer'] += [
-            'orgType' => 'EMPRESA', 'displayName' => 'Eventos',
+            'orgType' => 'EMPRESA',
             'legalName' => 'Eventos SAC', 'repName' => 'Juan Perez',
             'country' => 'PE', 'city' => 'Lima', 'phone' => '987654321',
             'website' => 'https://example.com',
         ];
+        $payload['marketingOptIn'] = true;
         $response = $this->postJson('/api/auth/register', $payload)->assertCreated();
-        foreach (array_keys($payload['organizer']) as $field) {
-            $response->assertJsonPath("user.organizer.{$field}", $payload['organizer'][$field]);
-        }
-        $this->assertEqualsCanonicalizing(
-            ['id', 'user_id', 'tax_id', 'details', 'created_at', 'updated_at'],
-            array_keys(OrganizerProfile::sole()->getAttributes()),
-        );
+        $this->assertSame(['displayName' => 'Eventos SAC', 'taxId' => '20123456789'], $response->json('user.organizer'));
+        $response->assertJsonMissingPath('user.marketingOptIn');
+        $this->assertSame(['displayName' => 'Eventos SAC'], OrganizerProfile::sole()->details);
+        $this->assertNull(User::sole()->marketing_opt_in);
     }
 
     public function test_untrusted_fields_cannot_override_role_or_create_another_profile(): void
