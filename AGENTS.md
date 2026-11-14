@@ -4,7 +4,7 @@ Actualizado: 2026-10-30.
 
 ## Entrada rápida
 
-Actualizado el 13/11/2026 con el avance de revisión, Mercado y cola virtual.
+Actualizado el 14/11/2026 con la persistencia de la cola en PostgreSQL.
 El PR #21 corrigió el HTTP 500 en compras. Render muestra `main` en `c67749b`
 como activo y el usuario confirmó una compra de prueba con entrega del correo.
 Consultar `docs/PROJECT_CONTEXT.md` para ver la evidencia y los pasos de Postman.
@@ -178,7 +178,7 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
 - Migración 2026_11_11_000002_add_first_sold_out_at_to_events_table.php: timestamp
   nullable, cast datetime en Event. Aplicar migraciones al desplegar.
 - Conversión de cola: contar órdenes con pase consumido en queue_purchases y
-  turnos vencidos y cancelados por evento en el archivo SQLite de Python.
+  turnos vencidos y cancelados por evento que devuelve Python.
   Deducir cualquier turno ya comprado de los resultados de Python. El denominador
   suma completados, vencidos y cancelados. Los filtros seleccionan los eventos
   por fecha de inicio. El mismo endpoint entrega los alias que espera Angular.
@@ -188,9 +188,10 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
 - VirtualQueueController maneja las rutas de cola, apertura de pago y
   habilitación irreversible de compras. VirtualQueue concentra la comunicación
   autenticada con Python y la verificación del pase RS256.
-- Python conserva turnos en memoria, con una instancia, FIFO, tres admisiones
-  por cinco segundos y tres admitidos activos por evento. Los pases duran
-  180 segundos. El vencimiento y la cancelación liberan el cupo.
+- La migración 2026_11_14_000001 crea `virtual_queue_turns` para guardar la cola
+  en el PostgreSQL compartido. Aplicarla antes de desplegar la versión de Python
+  que lee `VIRTUAL_QUEUE_DB_URL`. Se conservan FIFO, tres admisiones por cinco
+  segundos, tres admitidos activos por evento y pases de 180 segundos.
 - Las dos APIs de compra exigen queuePass para eventos con cola y registran
   su consumo en queue_purchases en la misma transacción que la orden. Laravel
   confirma al servicio tras el commit y reintenta en la siguiente operación de

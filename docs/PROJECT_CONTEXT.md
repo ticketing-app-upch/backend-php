@@ -1,6 +1,6 @@
 # Contexto del proyecto para IA
 
-Actualizado: 2026-11-13. Alcance de este checkout: **backend-php de AlpaTeck**.
+Actualizado: 2026-11-14. Alcance de este checkout: **backend-php de AlpaTeck**.
 Lee primero AGENTS.md y este archivo. Después consulta únicamente los archivos
 del flujo que vas a cambiar. README.md conserva los ejemplos y contratos completos.
 Si una implementación cambia, actualiza este resumen; el código y las migraciones
@@ -201,12 +201,13 @@ docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
   https://www.googleapis.com/auth/gmail.send con acceso sin conexión.
   Con un cliente OAuth externo en Testing, el refresh token vence en siete
   días. Configurar las credenciales en Environment del backend en Render.
-- Configurar VIRTUAL_QUEUE_URL, VIRTUAL_QUEUE_SERVICE_TOKEN y
-  VIRTUAL_QUEUE_PASS_PUBLIC_KEY. Python guarda los turnos en memoria.
-  Guarda vencimientos y cancelaciones en el archivo SQLite configurado en
-  VIRTUAL_QUEUE_OUTCOMES_DB. Mercado los cruza con queue_purchases y calcula
-  completados / (completados + vencidos + cancelados) para los eventos filtrados.
-  Anti-scalping pendiente.
+- Laravel usa VIRTUAL_QUEUE_URL, VIRTUAL_QUEUE_SERVICE_TOKEN y
+  VIRTUAL_QUEUE_PASS_PUBLIC_KEY. La versión de Python con persistencia usa
+  VIRTUAL_QUEUE_DB_URL para conectarse al mismo PostgreSQL y guardar turnos y
+  admisiones en `virtual_queue_turns`. Desplegar primero la migración Laravel
+  `2026_11_14_000001_create_virtual_queue_turns_table.php` y después Python con
+  esa variable. Mercado conserva el contrato de conversión y cruza los resultados
+  de Python con `queue_purchases`. Anti-scalping pendiente.
 
 - Angular abre los pendientes y rechazados del dueño por GET /api/events/{id}
   con JWT. Ese detalle privado incluye los dos banners para editar. La bandeja
@@ -253,6 +254,22 @@ la compatibilidad 2026_10_28_000001 y VenueSeeder (incluido en DatabaseSeeder).
 No usar migrate:fresh. La migración de
 tickets individualiza ventas antiguas conservando ID/código original, importe y
 stock; guarda snapshots y no elimina ventas al revertir columnas.
+
+### Cola persistente verificada el 2026-11-14 (Lima)
+
+- En Docker con PostgreSQL 18, se aplicó la migración de Laravel y pasaron
+  las cinco pruebas de Python. Cubren admisión simultánea desde dos instancias,
+  orden de llegada, vigencia del pase y resultados para Mercado.
+- La prueba HTTP con Laravel, Python y PostgreSQL compartido reutilizó un evento
+  demo local. Verificó `WAITING`, habilitación de ventas, `ADMITTED`, el mismo
+  pase tras reiniciar Python, apertura de pago `204`, compra `201` y reintento
+  `200` con la orden original. El turno acabó en `COMPLETED` y se descontó una
+  entrada. El correo usó el transporte de prueba.
+- Pasaron 57 pruebas de Laravel (484 aserciones) sobre cola, Mercado y límite
+  de compra con los controladores del PR #21. Ese arreglo sigue en `main` y
+  debe formar parte de la versión que se despliegue con la migración.
+- Pendiente de desplegar en Render. Los turnos que solo existían en memoria
+  y los resultados del SQLite anterior quedan fuera de la migración.
 
 ### Estado observado en Render el 2026-11-13 (Lima)
 
