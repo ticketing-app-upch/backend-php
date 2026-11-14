@@ -186,7 +186,8 @@ class EventController extends Controller
                 );
                 $turn = $queue->authorizePurchase($event, (string) $user->id, $data['queuePass'] ?? null);
 
-                if (array_sum(array_column($items, 'quantity')) > min(6, $event->max_per_order)) {
+                $requestedQuantity = array_sum(array_column($items, 'quantity'));
+                if ($requestedQuantity > min(6, $event->max_per_order)) {
                     throw ValidationException::withMessages(['items' => 'La cantidad supera el límite del evento.']);
                 }
                 // Cuenta entradas de ambas rutas, incluidas las históricas sin orden.
