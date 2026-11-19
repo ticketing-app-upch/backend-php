@@ -10,6 +10,7 @@ use App\Models\Event;
 use App\Models\EventZone;
 use App\Models\TicketOrder;
 use App\Models\User;
+use App\Support\AntiScalping;
 use App\Support\VirtualQueue;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,7 +19,7 @@ use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
-    public function store(StoreOrderRequest $request, VirtualQueue $queue): JsonResponse
+    public function store(StoreOrderRequest $request, VirtualQueue $queue, AntiScalping $antiScalping): JsonResponse
     {
         $data = $request->validated();
         $items = collect($data['items'])->map(fn ($item) => [
@@ -30,7 +31,7 @@ class OrderController extends Controller
             'paymentMethod' => $data['paymentMethod'] ?? 'CARD', 'paymentResult' => $data['paymentResult'] ?? 'APPROVED',
         ], JSON_THROW_ON_ERROR));
         $created = false;
-        $order = DB::transaction(function () use ($request, $queue, $data, $items, $hash, &$created) {
+        $order = DB::transaction(function () use ($request, $queue, $antiScalping, $data, $items, $hash, &$created) {
             // Serializa reintentos de la misma cuenta antes de tocar zonas o stock.
             $user = User::whereKey($request->user('api')->id)->lockForUpdate()->firstOrFail();
             abort_unless($user->active, 403, 'Tu cuenta está desactivada. Contacta al administrador');
@@ -60,6 +61,7 @@ class OrderController extends Controller
             if ($requestedQuantity > min(6, $event->max_per_order)) {
                 throw ValidationException::withMessages(['items' => 'La cantidad supera el límite del evento.']);
             }
+            $antiScalping->assertAllowed((float) ($data['timeElapsedSeconds'] ?? 0), $user, (int) $requestedQuantity);
             // La cuenta ya está bloqueada: dos intentos no pueden consumir el mismo cupo.
             $purchasedQuantity = (int) $user->tickets()
                 ->whereHas('eventZone', fn ($zones) => $zones->where('event_id', $event->id))
