@@ -24,6 +24,7 @@ class StoreOrderRequest extends FormRequest
             'paymentResult' => ['sometimes', 'in:APPROVED,DECLINED'],
             'idempotencyKey' => ['sometimes', 'string', 'min:1', 'max:128'],
             'queuePass' => ['sometimes', 'nullable', 'string', 'max:4096'],
+            'timeElapsedSeconds' => ['sometimes', 'numeric', 'min:0'],
         ];
     }
 

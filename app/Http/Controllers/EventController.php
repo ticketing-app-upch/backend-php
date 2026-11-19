@@ -17,6 +17,7 @@ use App\Models\Ticket;
 use App\Models\TicketOrder;
 use App\Models\User;
 use App\Models\Venue;
+use App\Support\AntiScalping;
 use App\Support\VirtualQueue;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
@@ -164,12 +165,12 @@ class EventController extends Controller
         return response('', 204);
     }
 
-    public function purchaseTickets(string $id, PurchaseTicketRequest $request, VirtualQueue $queue): JsonResponse
+    public function purchaseTickets(string $id, PurchaseTicketRequest $request, VirtualQueue $queue, AntiScalping $antiScalping): JsonResponse
     {
         $data = $request->validated();
         $items = $data['items'] ?? [['zoneId' => $data['zoneId'], 'quantity' => $data['quantity']]];
         try {
-            $tickets = DB::transaction(function () use ($request, $queue, $data, $items, $id) {
+            $tickets = DB::transaction(function () use ($request, $queue, $antiScalping, $data, $items, $id) {
                 $user = User::whereKey($request->user('api')->id)->lockForUpdate()->firstOrFail();
                 if (! $user->active) {
                     abort(403, 'Tu cuenta está desactivada. Contacta al administrador');
@@ -190,6 +191,7 @@ class EventController extends Controller
                 if ($requestedQuantity > min(6, $event->max_per_order)) {
                     throw ValidationException::withMessages(['items' => 'La cantidad supera el límite del evento.']);
                 }
+                $antiScalping->assertAllowed((float) ($data['timeElapsedSeconds'] ?? 0), $user, (int) $requestedQuantity);
                 // Cuenta entradas de ambas rutas, incluidas las históricas sin orden.
                 $purchasedQuantity = (int) $user->tickets()
                     ->whereHas('eventZone', fn ($zones) => $zones->where('event_id', $event->id))

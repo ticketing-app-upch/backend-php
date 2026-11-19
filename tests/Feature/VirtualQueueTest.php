@@ -105,6 +105,7 @@ class VirtualQueueTest extends TestCase
             'idempotencyKey' => 'queue-checkout',
         ];
         Http::fake([
+            self::SERVICE.'/api/v1/risk-score' => Http::response(['risk_score' => 10, 'action' => 'ALLOW']),
             self::SERVICE.'/v1/turns/validate' => Http::response(['valid' => true]),
             self::SERVICE.'/v1/turns/complete' => Http::sequence()->pushStatus(503)->push(['recorded' => true]),
             self::SERVICE.'/v1/turns/status' => Http::response(['status' => 'COMPLETED']),
