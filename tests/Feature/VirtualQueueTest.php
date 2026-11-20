@@ -82,7 +82,7 @@ class VirtualQueueTest extends TestCase
         $this->postJson('/api/orders', $order + ['queuePass' => $wrongUser], $this->headersFor($buyer))->assertForbidden();
         $wrongEvent = $this->pass($this->publishedEvent(), $buyer->id, (string) Str::uuid());
         $this->postJson($legacyPath, $legacy + ['queuePass' => $wrongEvent], $this->headersFor($buyer))->assertForbidden();
-        $expired = $this->pass($event, $buyer->id, (string) Str::uuid(), -180);
+        $expired = $this->pass($event, $buyer->id, (string) Str::uuid(), -120);
         $this->postJson($legacyPath, $legacy + ['queuePass' => $expired], $this->headersFor($buyer))->assertForbidden();
 
         Http::assertNothingSent();
@@ -130,7 +130,7 @@ class VirtualQueueTest extends TestCase
 
         return $this->signing->builder()->issuedBy('alpateck-virtual-queue')->permittedFor('alpateck-purchase')
             ->relatedTo((string) $userId)->identifiedBy($turnId)->withClaim('eventId', (string) $event->id)
-            ->issuedAt($issuedAt)->expiresAt($issuedAt->modify('+180 seconds'))
+            ->issuedAt($issuedAt)->expiresAt($issuedAt->modify('+120 seconds'))
             ->getToken($this->signing->signer(), $this->signing->signingKey())->toString();
     }
 }

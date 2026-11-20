@@ -183,7 +183,7 @@ docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
 - El listado /api/organizers/{organizerId}/events devuelve status=PENDIENTE
   para Angular demo4. La etiqueta efectiva sigue en displayStatus, incluida
   VENCIDO. La API v1 conserva su contrato. El reenvío JSON acepta PENDIENTE.
-- Python ordena y firma los pases RS256 de tres minutos. Laravel verifica
+- Python ordena y firma los pases RS256 de dos minutos. Laravel verifica
   firma, usuario, evento, vigencia y turno activo en ambas rutas de compra.
   El pase viaja en queuePass. Se registra su consumo en queue_purchases junto
   con la orden. Se notifica a Python después del commit y se reintenta al
