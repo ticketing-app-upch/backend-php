@@ -191,7 +191,7 @@ antes de editar y actualiza el contexto cuando cambie el comportamiento.
 - La migración 2026_11_14_000001 crea `virtual_queue_turns` para guardar la cola
   en el PostgreSQL compartido. Aplicarla antes de desplegar la versión de Python
   que lee `VIRTUAL_QUEUE_DB_URL`. Se conservan FIFO, tres admisiones por cinco
-  segundos, tres admitidos activos por evento y pases de 180 segundos.
+  segundos y tres admitidos activos por evento. Los pases nuevos duran 120 segundos.
 - Las dos APIs de compra exigen queuePass para eventos con cola y registran
   su consumo en queue_purchases en la misma transacción que la orden. Laravel
   confirma al servicio tras el commit y reintenta en la siguiente operación de

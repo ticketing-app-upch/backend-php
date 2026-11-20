@@ -79,7 +79,8 @@ class VirtualQueue
                 && $claims->get('eventId') === (string) $event->id
                 && is_string($turnId) && Str::isUuid($turnId)
                 && $issued !== null && $issued->getTimestamp() <= now()->getTimestamp() && $expires !== null
-                && $expires->getTimestamp() - $issued->getTimestamp() === 180
+                // Honor passes issued before the lifetime changed to 120 seconds.
+                && in_array($expires->getTimestamp() - $issued->getTimestamp(), [120, 180], true)
                 && $expires > now()
                 && ! DB::table('queue_purchases')->where('turn_id', $turnId)->lockForUpdate()->first(),
             403,
