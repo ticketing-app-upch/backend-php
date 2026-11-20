@@ -18,14 +18,14 @@ class UserResource extends JsonResource
             'email' => $this->email,
             'role' => $this->role->name,
 
-            'marketingOptIn' => $this->when($this->marketing_opt_in !== null, $this->marketing_opt_in),
-            'profile' => $this->when($this->role->name === 'CLIENT', fn () => array_merge($this->clientProfile->details ?? [], [
+            'profile' => $this->when($this->role->name === 'CLIENT', fn () => [
                 'docNumber' => $this->clientProfile->doc_number,
-            ])),
+            ]),
 
-            'organizer' => $this->when($this->role->name === 'ORGANIZER', fn () => array_merge($this->organizerProfile->details ?? [], [
+            'organizer' => $this->when($this->role->name === 'ORGANIZER', fn () => [
+                'displayName' => $this->organizerProfile->details['displayName'] ?? null,
                 'taxId' => $this->organizerProfile->tax_id,
-            ])),
+            ]),
         ];
     }
 }

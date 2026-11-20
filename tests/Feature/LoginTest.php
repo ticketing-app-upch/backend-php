@@ -96,6 +96,44 @@ class LoginTest extends TestCase
         ];
     }
 
+    public static function rolesWithProfiles(): array
+    {
+        return [
+            'client' => ['CLIENT'],
+            'organizer' => ['ORGANIZER'],
+        ];
+    }
+
+    #[DataProvider('rolesWithProfiles')]
+    public function test_login_only_returns_agreed_fields_even_for_historical_profiles(string $role): void
+    {
+        $user = $this->createUser($role);
+        $user->forceFill(['marketing_opt_in' => true])->save();
+        $profile = $role === 'CLIENT' ? $user->clientProfile : $user->organizerProfile;
+        $details = [
+            'displayName' => 'Empresa existente', 'phone' => '987654321', 'phoneCode' => '+51',
+            'country' => 'PE', 'city' => 'Lima', 'gender' => 'F', 'docType' => 'DNI',
+            'role' => 'ADMIN', 'verificationStatus' => 'VERIFIED',
+        ];
+        $profile->update(['details' => $details]);
+
+        $response = $this->postJson('/api/auth/login', [
+            'email' => $user->email, 'password' => 'Secret123!',
+        ])->assertOk();
+
+        $this->assertSame([
+            'id' => (string) $user->id,
+            'fullName' => $user->full_name,
+            'email' => $user->email,
+            'role' => $role,
+            ...($role === 'CLIENT'
+                ? ['profile' => ['docNumber' => '01234567']]
+                : ['organizer' => ['displayName' => 'Empresa existente', 'taxId' => '20123456789']]),
+        ], $response->json('user'));
+        $this->assertSame($details, $profile->fresh()->details);
+        $this->assertTrue((bool) $user->fresh()->marketing_opt_in);
+    }
+
     #[DataProvider('invalidCredentials')]
     public function test_invalid_credentials_return_the_same_401_without_a_token(string $email, string $password): void
     {

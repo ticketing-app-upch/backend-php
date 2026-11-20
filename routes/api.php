@@ -1,11 +1,14 @@
 <?php
 
+use App\Http\Controllers\AdminEventController;
 use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\EventController;
 use App\Http\Controllers\FavoriteController;
+use App\Http\Controllers\MarketDashboardController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PricingController;
+use App\Http\Controllers\VirtualQueueController;
 use App\Http\Controllers\TicketController;
 use App\Http\Controllers\VenueController;
 use Illuminate\Support\Facades\Route;
@@ -20,12 +23,20 @@ Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth
 Route::prefix('v1/admin')->middleware(['auth:api', 'role:ADMIN'])->group(function () {
     Route::get('/usuarios', [AdminUserController::class, 'index']);
     Route::patch('/usuarios/{id}/estado', [AdminUserController::class, 'updateStatus'])->whereNumber('id');
+    Route::patch('/eventos/{id}/estado', [AdminEventController::class, 'review'])->whereNumber('id');
+    Route::get('/eventos', [AdminEventController::class, 'index']);
+    Route::get('/eventos/{id}', [AdminEventController::class, 'show'])->whereNumber('id');
+    Route::get('/eventos/{id}/banner', [AdminEventController::class, 'banner'])->whereNumber('id');
+    Route::get('/eventos/{id}/secondary-banner', [AdminEventController::class, 'secondaryBanner'])->whereNumber('id');
 });
 
 Route::get('/events', [EventController::class, 'index']);
 Route::get('/events/{id}', [EventController::class, 'show'])->whereNumber('id');
 Route::get('/events/{id}/banner', [EventController::class, 'banner'])->whereNumber('id');
 Route::get('/events/{id}/secondary-banner', [EventController::class, 'secondaryBanner'])->whereNumber('id');
+Route::get('/v1/admin/event-review-images/{id}/{image}', [AdminEventController::class, 'signedImage'])
+    ->whereNumber('id')->whereIn('image', ['banner', 'secondary-banner'])
+    ->middleware('signed:relative')->name('admin.event-review.image');
 Route::get('/v1/tickets/{code}/validacion', [TicketController::class, 'validatePublic']);
 Route::post('/v1/dynamic-price', [PricingController::class, 'quote']);
 
@@ -51,6 +62,12 @@ Route::middleware(['auth:api', 'role:ORGANIZER'])->group(function () {
     Route::post('/events', [EventController::class, 'store']);
     Route::match(['put', 'patch'], '/events/{id}', [EventController::class, 'update'])->whereNumber('id');
     Route::get('/events/{id}/sales-report', [EventController::class, 'salesReport']);
+    Route::put('/v1/eventos/{id}', [EventController::class, 'update'])->whereNumber('id');
+    Route::get('/v1/eventos/{id}', [EventController::class, 'showOwn'])->whereNumber('id');
+    Route::get('/v1/eventos/{id}/banner', [EventController::class, 'ownBanner'])->whereNumber('id');
+    Route::get('/v1/eventos/{id}/secondary-banner', [EventController::class, 'ownSecondaryBanner'])->whereNumber('id');
+    Route::patch('/v1/eventos/{id}/habilitar-compras', [VirtualQueueController::class, 'enablePurchases'])->whereNumber('id');
+    Route::get('/v1/dashboard/mercado', MarketDashboardController::class);
 });
 
 Route::middleware(['auth:api', 'role:CLIENT'])->group(function () {
@@ -62,4 +79,8 @@ Route::middleware(['auth:api', 'role:CLIENT'])->group(function () {
     Route::get('/v1/tickets', [TicketController::class, 'index']);
     Route::get('/v1/tickets/{id}', [TicketController::class, 'show'])->whereNumber('id');
     Route::post('/events/{id}/tickets', [EventController::class, 'purchaseTickets'])->whereNumber('id');
+    Route::post('/v1/eventos/{id}/cola', [VirtualQueueController::class, 'join'])->whereNumber('id');
+    Route::get('/v1/eventos/{id}/cola/estado', [VirtualQueueController::class, 'status'])->whereNumber('id');
+    Route::post('/v1/eventos/{id}/cola/cancelar', [VirtualQueueController::class, 'cancel'])->whereNumber('id');
+    Route::post('/v1/eventos/{id}/pago/apertura', [VirtualQueueController::class, 'openPayment'])->whereNumber('id');
 });

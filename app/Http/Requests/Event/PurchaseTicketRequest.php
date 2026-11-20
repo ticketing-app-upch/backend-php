@@ -24,6 +24,8 @@ class PurchaseTicketRequest extends FormRequest
             'payment.cardNumber' => ['required', 'string', 'regex:/\A[0-9]{13,19}\z/'],
             'payment.cvv' => ['required', 'string', 'regex:/\A[0-9]{3,4}\z/'],
             'payment.expiresAt' => ['required', 'date_format:Y-m-d', 'after:today'],
+            'queuePass' => ['sometimes', 'nullable', 'string', 'max:4096'],
+            'timeElapsedSeconds' => ['sometimes', 'numeric', 'min:0'],
         ];
     }
 

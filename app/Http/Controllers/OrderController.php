@@ -5,10 +5,13 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Event\StoreOrderRequest;
 use App\Http\Requests\Event\UpdateOrderStatusRequest;
 use App\Http\Resources\OrderResource;
+use App\Mail\PurchaseConfirmed;
 use App\Models\Event;
 use App\Models\EventZone;
 use App\Models\TicketOrder;
 use App\Models\User;
+use App\Support\AntiScalping;
+use App\Support\VirtualQueue;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +19,7 @@ use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
-    public function store(StoreOrderRequest $request): JsonResponse
+    public function store(StoreOrderRequest $request, VirtualQueue $queue, AntiScalping $antiScalping): JsonResponse
     {
         $data = $request->validated();
         $items = collect($data['items'])->map(fn ($item) => [
@@ -28,7 +31,7 @@ class OrderController extends Controller
             'paymentMethod' => $data['paymentMethod'] ?? 'CARD', 'paymentResult' => $data['paymentResult'] ?? 'APPROVED',
         ], JSON_THROW_ON_ERROR));
         $created = false;
-        $order = DB::transaction(function () use ($request, $data, $items, $hash, &$created) {
+        $order = DB::transaction(function () use ($request, $queue, $antiScalping, $data, $items, $hash, &$created) {
             // Serializa reintentos de la misma cuenta antes de tocar zonas o stock.
             $user = User::whereKey($request->user('api')->id)->lockForUpdate()->firstOrFail();
             abort_unless($user->active, 403, 'Tu cuenta está desactivada. Contacta al administrador');
@@ -42,11 +45,31 @@ class OrderController extends Controller
                     return $previous;
                 }
             }
-            $event = Event::whereKey($data['eventId'])->where('status', 'PUBLISHED')->where('starts_at', '>', now())->first();
-            abort_unless($event, 404, 'Evento no disponible');
-            if ($items->sum('quantity') > min(6, $event->max_per_order)) {
+            $event = Event::whereKey($data['eventId'])
+                ->where('status', 'PUBLISHED')
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless(
+                $event !== null && $event->starts_at->isFuture(),
+                404,
+                'Evento no disponible',
+            );
+            $turn = $queue->authorizePurchase($event, (string) $user->id, $data['queuePass'] ?? null);
+
+            $requestedQuantity = $items->sum('quantity');
+            if ($requestedQuantity > min(6, $event->max_per_order)) {
                 throw ValidationException::withMessages(['items' => 'La cantidad supera el límite del evento.']);
             }
+            $antiScalping->assertAllowed((float) ($data['timeElapsedSeconds'] ?? 0), $user, (int) $requestedQuantity);
+            // La cuenta ya está bloqueada: dos intentos no pueden consumir el mismo cupo.
+            $purchasedQuantity = (int) $user->tickets()
+                ->whereHas('eventZone', fn ($zones) => $zones->where('event_id', $event->id))
+                ->where(fn ($tickets) => $tickets->whereNull('ticket_order_id')
+                    ->orWhereHas('order', fn ($orders) => $orders->where('status', 'CONFIRMADA')))
+                ->sum('quantity');
+            abort_if($purchasedQuantity + $requestedQuantity > 6, 409,
+                'La compra supera el máximo de 6 entradas por usuario para este evento.');
             $zones = EventZone::where('event_id', $event->id)->whereIn('id', $items->pluck('zoneId'))
                 ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             if ($zones->count() !== $items->count()) {
@@ -63,12 +86,10 @@ class OrderController extends Controller
                 $lines[] = ['zoneId' => (string) $zone->id, 'zoneName' => $zone->name,
                     'unitPrice' => $price / 100, 'quantity' => $item['quantity']];
                 for ($index = 0; $index < $item['quantity']; $index++) {
-                    $entries[] = ['zone' => $zone, 'price' => $price, 'fee' => intdiv($price * 6, 100)];
+                    $entries[] = ['zone' => $zone, 'price' => $price];
                 }
             }
-            $fee = intdiv($subtotal * 6 + 50, 100);
-            $total = $subtotal + $fee;
-            abort_if(isset($data['expectedTotal']) && (int) round($data['expectedTotal'] * 100) !== $total,
+            abort_if(isset($data['expectedTotal']) && (int) round($data['expectedTotal'] * 100) !== $subtotal,
                 409, 'El precio cambió. Solicita una nueva cotización antes de confirmar.');
             // Simulación de Demo 3: nunca se reciben ni se persisten datos de tarjeta.
             abort_if(($data['paymentResult'] ?? 'APPROVED') === 'DECLINED', 402,
@@ -80,31 +101,34 @@ class OrderController extends Controller
                 'event_venue' => $event->venue_name.($event->city ? ', '.$event->city : ''),
                 'status' => 'CONFIRMADA', 'payment_method' => $data['paymentMethod'] ?? 'CARD',
                 'idempotency_key' => $data['idempotencyKey'] ?? null, 'request_hash' => $hash,
-                'lines' => $lines, 'subtotal' => $subtotal / 100, 'fee' => $fee / 100, 'total' => $total / 100,
+                'lines' => $lines, 'subtotal' => $subtotal / 100, 'fee' => 0, 'total' => $subtotal / 100,
             ]);
-            // Reparte los centavos de redondeo sin alterar el total de la orden.
-            $remainder = $fee - array_sum(array_column($entries, 'fee'));
-            $ranked = array_keys($entries);
-            usort($ranked, fn ($a, $b) => (($entries[$b]['price'] * 6) % 100) <=> (($entries[$a]['price'] * 6) % 100) ?: $a <=> $b);
-            foreach (array_slice($ranked, 0, $remainder) as $index) {
-                $entries[$index]['fee']++;
-            }
             foreach ($entries as $entry) {
-                $ticketFee = $entry['fee'];
                 $zone = $entry['zone'];
                 $order->tickets()->create([
                     'user_id' => $user->id, 'event_zone_id' => $zone->id, 'quantity' => 1,
                     'code' => 'TICK-'.now()->year.'-'.strtoupper(bin2hex(random_bytes(8))),
-                    'unit_price' => $entry['price'] / 100, 'service_fee' => $ticketFee / 100,
-                    'total_price' => ($entry['price'] + $ticketFee) / 100,
+                    'unit_price' => $entry['price'] / 100, 'service_fee' => 0,
+                    'total_price' => $entry['price'] / 100,
                     'event_title' => $event->title, 'event_starts_at' => $event->starts_at,
                     'venue_name' => $event->venue_name, 'venue_address' => $event->venue_address,
                     'zone_name' => $zone->name,
                 ]);
             }
             foreach ($items as $item) {
-                $zones[$item['zoneId']]->decrement('available_capacity', $item['quantity']);
+                $zones[$item['zoneId']]->decrement(
+                    'available_capacity',
+                    $item['quantity'],
+                );
             }
+
+            $event->recordFirstSoldOut();
+            if ($turn !== null) {
+                $queue->recordPurchase($event, $order->id, $turn);
+                DB::afterCommit(fn () => $queue->notifyCommittedChange($event->id));
+            }
+
+            PurchaseConfirmed::sendAfterCommit($order, $user->email);
             $created = true;
 
             return $order;
@@ -141,6 +165,7 @@ class OrderController extends Controller
             $order = TicketOrder::with('tickets')->whereKey($id)->lockForUpdate()->first();
             abort_unless($order, 404, 'Orden no encontrada.');
             abort_unless($order->status === 'CONFIRMADA', 409, 'Esta orden no puede cancelarse.');
+            Event::whereKey($order->event_id)->lockForUpdate()->firstOrFail();
             $zones = EventZone::whereIn('id', $order->tickets->pluck('event_zone_id'))->orderBy('id')
                 ->lockForUpdate()->get()->keyBy('id');
             foreach ($order->tickets->groupBy('event_zone_id') as $zoneId => $tickets) {

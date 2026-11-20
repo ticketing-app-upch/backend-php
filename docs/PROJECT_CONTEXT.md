@@ -1,6 +1,6 @@
 # Contexto del proyecto para IA
 
-Actualizado: 2026-10-28. Alcance de este checkout: **backend-php de AlpaTeck**.
+Actualizado: 2026-11-14. Alcance de este checkout: **backend-php de AlpaTeck**.
 Lee primero AGENTS.md y este archivo. Después consulta únicamente los archivos
 del flujo que vas a cambiar. README.md conserva los ejemplos y contratos completos.
 Si una implementación cambia, actualiza este resumen; el código y las migraciones
@@ -10,10 +10,9 @@ actuales prevalecen sobre documentos antiguos.
 
 AlpaTeck es una plataforma de venta de entradas. Roles internos: CLIENT
 (asistente), ORGANIZER (organizador) y ADMIN (administrador). El frontend Angular
-es otro repositorio; existe como hermano `../frontend-angular`, rama demo3,
-solo como referencia de contrato, sin modificarlo ni integrarlo permanentemente.
-El backlog también contempla una
-cola/anti-scalping en Python; ese microservicio no existe en este checkout.
+es otro repositorio. La rama demo4 sirve como referencia de contrato. La cola se
+integra con un servicio Python independiente cuya configuración se documenta en
+su README.
 
 La Épica 1 corresponde conjuntamente a las demos 1 y 2, según confirmación del
 usuario. Sus historias son HU-01 a HU-08: registro, login, logout, expiración,
@@ -46,10 +45,14 @@ y limpieza del navegador corresponden a Angular y no se verifican aquí.
 | Administración de usuarios | AdminUserController, Requests/Admin, AdminUserResource | AdminUserManagementTest |
 | JWT y roles | config/auth.php, config/jwt.php, EnsureUserHasRole, bootstrap/app.php | SessionSecurityTest, RoleMiddlewareTest, ApiAuthenticationFailureTest |
 | Administrador inicial | AdminUserSeeder, DatabaseSeeder, config/initial_admin.php | AdminUserSeederTest |
+| Datos demo (eventos/usuarios) | DemoDataSeeder, database/data/frontend-events.json | DemoDataSeederTest |
 | Catálogo/creación/compra/reporte | EventController, Requests/Event, Resources de eventos/tickets/ventas | IndexEventTest, StoreEventTest, PurchaseTicketTest, SalesReportTest |
 | Recintos/mapas y favoritos | VenueController, VenueSeeder, VenueResource; FavoriteController | StoreEventTest, FavoriteTest |
 | Mis Tickets/validación pública | TicketController, TicketResource, Ticket | TicketReadTest, DemoThreeMigrationTest |
-| Compatibilidad Angular demo3 | OrderController, PricingController, OrderResource, Requests/Event, catálogo JSON | FrontendCompatibilityTest |
+| Compra e idempotencia | OrderController, EventController, OrderResource, Requests/Event | FrontendCompatibilityTest, PurchaseTicketTest, PurchaseLimitTest (main) |
+| Cola virtual | VirtualQueueController, Support/VirtualQueue, servicio Python | VirtualQueueTest, test_virtual_queue.py |
+| Confirmación por correo | Mail/PurchaseConfirmed, Mail/GmailTransport, config/mail.php, config/services.php | Pruebas de correo en FrontendCompatibilityTest |
+| Cotización y compatibilidad Angular | PricingController, EventResource, catálogo JSON | FrontendCompatibilityTest |
 | Rutas y despliegue | routes/api.php, render.yaml, bin/deploy.sh, Dockerfile.render | route:list y pruebas HTTP |
 
 Los controladores están en app/Http/Controllers; requests y resources bajo
@@ -67,8 +70,11 @@ capa adicional de servicios/repositorios. Los recursos usan camelCase e IDs stri
 | PATCH /api/v1/admin/usuarios/{id}/estado | ADMIN | 200: usuario actualizado; 403 cuenta ADMIN; 404 usuario inexistente; 422 estado inválido |
 
 - Registro: fullName, email, password, role, acceptedTerms=true; CLIENT requiere
-  profile.docNumber (DNI string de 8 dígitos); ORGANIZER requiere organizer.taxId
+  profile.docNumber (DNI string de 8 dígitos); ORGANIZER requiere
+  organizer.displayName (nombre de empresa, 2–255 caracteres) y organizer.taxId
   (RUC string de 11 dígitos con prefijo 10/15/17/20). ADMIN no tiene autorregistro.
+  Campos confirmados por el usuario mediante capturas el 2026-10-29, conservando
+  la aceptación de T&C acordada. No ampliar el registro por otros contratos.
 - Password: mínimo 8 caracteres, mayúscula, número y carácter especial; cast hashed.
   Registro activa la cuenta sin confirmación por correo. No hay recuperación de contraseña.
 - Login normaliza email. Cuenta inactiva con contraseña correcta: 403 y
@@ -87,22 +93,30 @@ capa adicional de servicios/repositorios. Los recursos usan camelCase e IDs stri
   No hay alta/eliminación administrativa ni cambios de estado sobre administradores.
 - Logout usa blacklist y caché compartida (database en Render); no desactivar
   JWT_BLACKLIST_ENABLED si se necesita revocación. El navegador debe borrar sus datos.
-- Perfiles opcionales del frontend y marketingOptIn se conservan con lista explícita
-  de campos; detalles en JSON de client_profiles/organizer_profiles. No aceptar roles
-  ni verificationStatus dentro de esos datos. Se mantienen DNI/RUC y permisos.
+- Registro ignora campos adicionales (teléfono, país, género, marketingOptIn,
+  docType, etc.). Solo guarda DNI para CLIENT y RUC/nombre de empresa para ORGANIZER;
+  el nombre de empresa usa organizer_profiles.details.displayName. Registro/login
+  devuelven únicamente los campos acordados, incluso para perfiles históricos.
+  Las columnas details y marketing_opt_in existentes no se eliminan ni se limpian;
+  no se modifican datos históricos ni migraciones por esta corrección.
 
 ## Demo 3: eventos, favoritos y tickets
 
 Contrato vigente: docs/FRONTEND_COMPATIBILITY.md. Entrega anterior registrada en
 docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
 
-- GET /api/v1/recintos (ORGANIZER): 15 recintos y 50 zonas exactos del catálogo
-  Angular en database/data/frontend-venues.json. Aforos de maqueta, nombres exactos,
+- GET /api/v1/recintos (ORGANIZER): 16 recintos y 51 zonas en
+  database/data/frontend-venues.json: 15 recintos originales de Angular más
+  Recinto de prueba (Lima, slug recinto-prueba, una zona General de capacidad 1).
+  VenueSeeder carga el JSON y está incluido en DatabaseSeeder. Ejecutarlo en la
+  base del entorno tras actualizar el código; el pull no actualiza la BD.
+  Aforos de maqueta, nombres exactos,
   slug y geometría auxiliar. No borrar los tres recintos antiguos si ya existen;
   se conservan como históricos y no se muestran en el catálogo nuevo.
 - POST /api/events también recibe EventItem JSON: name, venue string, city,
   zonas con name/capacity/sold=0/price y dos imágenes JPEG Base64 distintas.
   Resuelve recinto/zonas en BD y verifica aforos; el dueño procede del JWT.
+  Admite una o más zonas, exigiendo siempre todas las zonas del recinto seleccionado.
   JSON exige 24 horas de separación; frontend IDs temporales no son IDs de compra.
 - POST /api/events (ORGANIZER activo): multipart con venueId, archivo banner JPEG
   <=2 MiB, mínimo 1920×480/4:1, startsAt futuro y zones[{venueZoneId,basePrice>0}].
@@ -126,12 +140,19 @@ docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
   cardNumber string 13–19 dígitos, cvv string 3–4 dígitos y expiresAt YYYY-MM-DD futuro.
   Aprobación simulada sin guardar tarjeta/CVV; bloquea usuario y zonas por ID.
   Sin aforo: 409, sin cambios parciales. Respuesta {paymentStatus,quantity,totalPrice,tickets}.
+- BUG-008 (2026-10-30): ambas rutas de compra comprueban también un máximo
+  acumulado de 6 entradas confirmadas por usuario y evento, entre todos sus
+  intentos y zonas. Incluye tickets históricos sin orden sumando quantity;
+  las órdenes CANCELADA no consumen cupo. Usuario bloqueado antes de leer
+  el acumulado; exceso devuelve 409 sin nuevas órdenes, tickets ni descuentos.
+  maxPerOrder conserva su significado por intento. Los reintentos idempotentes
+  se resuelven antes del acumulado y devuelven la orden existente.
 - Una entrada = un Ticket con quantity=1, código TICK-año-16hex y snapshots
   inmutables de precio, zona, evento y fecha. GET /api/v1/tickets y .../{id}
   requieren CLIENT y solo retornan propios (ajeno 404).
 - POST /api/orders (CLIENT activo): CreateOrderPayload del frontend, con eventId,
   items, expectedTotal/paymentMethod/paymentResult/idempotencyKey opcionales.
-  Recalcula precios de BD, comisión del 6% y redondeos en centavos; máximo 6.
+  Recalcula precios de BD en centavos. Máximo seis entradas por compra.
   DECLINED causa 402; precio distinto/stock insuficiente 409, sin escrituras parciales.
   Bloquea usuario y zonas en orden estable. Misma clave/payload devuelve orden previa
   con 200; clave reutilizada con otro payload causa 409. Primera creación 201.
@@ -150,14 +171,58 @@ docs/DEMO3_IMPLEMENTATION.md. Referencia frontend: demo3, commit 52e027a.
 - FRONTEND_URL configura shareUrl (/attendee/event/{id}) y validationUrl
   (/validar/{code}); si está vacío se usa APP_URL. Banner siempre usa APP_URL.
 
-Demo 4 pendiente: cola/turnos/anti-scalping, habilitar compras, aprobación/rechazo,
-edición de rechazados y correo de confirmación. El reporte del organizador
-propietario ya existía y se conserva; no se amplió con esos flujos.
+## Demo 4: cola virtual
 
-Límites del frontend original: useMock/useMockAuth=true, favoritos en localStorage,
-validación pública en MockStore y logout sin HTTP. Preparar backend no conecta esas
-acciones. La integración temporal solo cambia configuración de una copia aislada;
-no modificar el repositorio Angular original ni dejar esa copia al finalizar.
+- Solo el ORGANIZER dueño y activo habilita ventas con PATCH
+  /api/v1/eventos/{id}/habilitar-compras, en eventos publicados, futuros y con
+  cola. Se guarda purchases_enabled_at. El evento expone purchasesEnabled y
+  purchasesEnabledAt.
+- El CLIENT activo usa POST /api/v1/eventos/{id}/cola, GET con sufijo
+  /cola/estado y POST con sufijos /cola/cancelar y /pago/apertura. Se puede
+  esperar antes de la habilitación. Angular consulta cada cinco segundos.
+- El listado /api/organizers/{organizerId}/events devuelve status=PENDIENTE
+  para Angular demo4. La etiqueta efectiva sigue en displayStatus, incluida
+  VENCIDO. La API v1 conserva su contrato. El reenvío JSON acepta PENDIENTE.
+- Python ordena y firma los pases RS256 de dos minutos. Laravel verifica
+  firma, usuario, evento, vigencia y turno activo en ambas rutas de compra.
+  El pase viaja en queuePass. Se registra su consumo en queue_purchases junto
+  con la orden. Se notifica a Python después del commit y se reintenta al
+  operar la cola si falla. La idempotencia sigue devolviendo la orden original.
+- POST /api/orders aplica el total sin comisión del checkout Angular demo4
+  para eventos con y sin cola. Compras históricas conservan sus importes.
+- Las dos rutas de compra envían la confirmación al correo registrado por el
+  comprador después del commit. MAIL_MAILER=log deja constancia
+  local del mensaje. Si el envío falla, queda registrado el ID de la orden.
+  Un reintento idempotente devuelve la orden sin reenviar el correo.
+- Para enviar desde la cuenta Gmail de la plataforma, configurar
+  MAIL_MAILER=gmail, MAIL_FROM_ADDRESS con la cuenta Google autorizada,
+  MAIL_FROM_NAME, GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET y GMAIL_REFRESH_TOKEN.
+  Habilitar Gmail API en Google Cloud y autorizar únicamente el alcance
+  https://www.googleapis.com/auth/gmail.send con acceso sin conexión.
+  Con un cliente OAuth externo en Testing, el refresh token vence en siete
+  días. Configurar las credenciales en Environment del backend en Render.
+- Laravel usa VIRTUAL_QUEUE_URL, VIRTUAL_QUEUE_SERVICE_TOKEN y
+  VIRTUAL_QUEUE_PASS_PUBLIC_KEY. La versión de Python con persistencia usa
+  VIRTUAL_QUEUE_DB_URL para conectarse al mismo PostgreSQL y guardar turnos y
+  admisiones en `virtual_queue_turns`. Desplegar primero la migración Laravel
+  `2026_11_14_000001_create_virtual_queue_turns_table.php` y después Python con
+  esa variable. Mercado conserva el contrato de conversión y cruza los resultados
+  de Python con `queue_purchases`. Anti-scalping pendiente.
+
+- Angular abre los pendientes y rechazados del dueño por GET /api/events/{id}
+  con JWT. Ese detalle privado incluye los dos banners para editar. La bandeja
+  ADMIN entrega URL de imagen firmada, válida cinco minutos mientras el evento
+  siga pendiente. Renovar la bandeja para obtener URLs nuevas.
+- Mercado acepta from/to/venue/queue y devuelve los campos de Angular junto
+  con summary, topVenues, sellOutTime y queueConversion. El reporte por evento
+  sigue en /api/events/{id}/sales-report. Angular aún debe conectar ese reporte
+  y mostrar ocupación por zona. La ficha todavía no muestra explícitamente
+  el estado del evento debajo del título. Logout en Angular sigue siendo local.
+
+La rama Angular demo4 sirve como referencia de contrato y conserva
+useMock/useMockAuth=true en el checkout. El frontend desplegado aún no tiene
+actualizado el flujo de cola, según el usuario. Las pruebas actuales de cola,
+compra y correo en Render se hacen con Postman directamente contra Laravel.
 
 ## Operación, pruebas y despliegue
 
@@ -165,6 +230,22 @@ Setup y comandos completos en README. En Docker: migrate --seed es obligatorio
 para los roles. INITIAL_ADMIN_NAME/EMAIL/PASSWORD privados crean el admin de forma
 idempotente; repetir el seeder no cambia contraseñas. Con los tres vacíos se omite;
 configuración parcial falla. El email se normaliza para poder iniciar sesión.
+
+DatabaseSeeder llama también a DemoDataSeeder: crea las cuentas demo
+cliente@tkt.pe / Cliente1$ (CLIENT) y organizador@tkt.pe / Organizador1$
+(ORGANIZER), con perfiles DNI/RUC, y siembra los 16 eventos de
+database/data/frontend-events.json como PUBLISHED con zonas ligadas al catálogo
+de recintos (zona → venue_zone_id y aforo del recinto). Excepción única: Sabores
+del Perú conserva sus 2 zonas propias sin venue_zone_id y aforos de maqueta
+(8000/1500), porque no existen en Explanada Costa Verde. Las fechas son
+relativas a la siembra: el evento más próximo queda a 7 días conservando los
+intervalos del archivo, para que el catálogo nunca venza. image_url se calcula
+como en el frontend (palabra clave/recinto/categoría con pools Unsplash y fotos
+locales de /events). Idempotente: repetir no duplica ni resetea stock; los DNI/RUC
+ceden ante los ya registrados en la BD (candidatos deterministas y aviso si no queda
+ninguno) y toda la siembra corre en una transacción, por lo que nunca deja usuarios
+a medias; solo AdminUserSeederTest se ajustó por los dos usuarios demo; el ADMIN sigue
+saliendo exclusivamente de INITIAL_ADMIN_*.
 
 Render ejecuta config/route/view cache, migrate --force y db:seed --force.
 Completar INITIAL_ADMIN_* en el panel privado; no inventar credenciales en fuentes.
@@ -174,11 +255,77 @@ No usar migrate:fresh. La migración de
 tickets individualiza ventas antiguas conservando ID/código original, importe y
 stock; guarda snapshots y no elimina ventas al revertir columnas.
 
-Servicio conocido: https://alpateck-backend.onrender.com. El 2026-10-25 se verificó
-200 en /up y /api/events y un despliegue exitoso del commit b9e7446. Los cambios
-de la Épica 1 y Demo 3 se entregan en la rama feat/demo_3. Main no se modificó;
-publicar esa rama no la integra a main ni despliega Render automáticamente.
-No confundir el servicio ya existente con esta nueva versión.
+### Cola persistente verificada el 2026-11-14 (Lima)
+
+- En Docker con PostgreSQL 18, se aplicó la migración de Laravel y pasaron
+  las cinco pruebas de Python. Cubren admisión simultánea desde dos instancias,
+  orden de llegada, vigencia del pase y resultados para Mercado.
+- La prueba HTTP con Laravel, Python y PostgreSQL compartido reutilizó un evento
+  demo local. Verificó `WAITING`, habilitación de ventas, `ADMITTED`, el mismo
+  pase tras reiniciar Python, apertura de pago `204`, compra `201` y reintento
+  `200` con la orden original. El turno acabó en `COMPLETED` y se descontó una
+  entrada. El correo usó el transporte de prueba.
+- Pasaron 57 pruebas de Laravel (484 aserciones) sobre cola, Mercado y límite
+  de compra con los controladores del PR #21. Ese arreglo sigue en `main` y
+  debe formar parte de la versión que se despliegue con la migración.
+- Pendiente de desplegar en Render. Los turnos que solo existían en memoria
+  y los resultados del SQLite anterior quedan fuera de la migración.
+
+### Estado observado en Render el 2026-11-13 (Lima)
+
+- Laravel en `https://alpateck-backend.onrender.com`. El [PR #21](https://github.com/ticketing-app-upch/backend-php/pull/21)
+  integró `fix/compra-render` (`1369af0`) en `main` con el commit `c67749b`.
+  El panel de Render mostró ese commit como `Live`, con `Auto-Deploy` como
+  origen del [despliegue](https://dashboard.render.com/web/srv-dbelmuvb9u1s73a5c61g/deploys/dep-dbrsr7lbedkc73bhjd2g).
+- Python en `https://pricing-service-python.onrender.com`. Render mostró `main`
+  en `53dbc00` como `Live` (PR #1 de `ticketing-app-upch/pricing-service-python`).
+  Las cuatro pruebas unitarias de Python y la prueba HTTP de `/health` e ingreso
+  autenticado pasaron en Docker local.
+- El usuario informó que configuró las variables de entorno en Render. En la
+  instancia gratuita de Python, los turnos en memoria y el SQLite local se
+  pierden si Render reinicia o suspende el servicio. Para un `503` de cola,
+  comprobar `/health` de Python, revisar su log y verificar que Laravel apunte
+  a la URL pública del servicio, que ambos tengan el mismo token y que la clave
+  pública de Laravel corresponda a la privada de Python.
+- En `254d26c` (PR #20), Postman mostró `500 Server Error` en `POST /api/orders`.
+  Los logs de Laravel registraron `Undefined variable $requestedQuantity` en
+  `OrderController.php:68`. `EventController::purchaseTickets` tenía el mismo
+  error. Ambas rutas fallaban antes de crear la orden y programar el correo.
+  El PR #21 calcula `$requestedQuantity` en los dos controladores antes de
+  comprobar el máximo por orden y el máximo acumulado de seis entradas por
+  usuario y evento. Si Postman responde `401 Unauthenticated`, volver a iniciar
+  sesión y repetir con un JWT vigente.
+- El usuario confirmó una compra de prueba en Render y mostró la recepción de
+  `Compra confirmada` en Gmail, con una entrada General para el Festival de Luz
+  y Sabor. La captura acredita la entrega del correo. Queda por documentar si esa
+  compra usó un pase de cola y si se repitió con la misma clave de idempotencia.
+- La verificación previa de la corrección en Docker con SQLite tuvo 82 de 83
+  casos aprobados, incluidos límite acumulado, cola y Gmail simulado. El caso
+  restante,
+  `test_single_zone_test_venue_can_be_published_read_publicly_and_sold_out`,
+  recibió 404 al consultar el detalle público de un evento recién creado, que
+  requiere aprobación de ADMIN. El fallo ocurrió antes de intentar la compra.
+
+### Prueba de compra desde Postman
+
+1. Enviar `POST /api/auth/login` y usar el campo `token` como `Bearer` en las
+   solicitudes del comprador. Enviar JSON con `Accept: application/json`.
+2. Consultar `GET /api/events/{id}` para obtener `zones[].id`, disponibilidad y
+   `purchasesEnabled`. Si se prueba un evento con cola, usar uno publicado,
+   futuro y con compras habilitadas por su organizador. Enviar
+   `POST /api/v1/eventos/{id}/cola` y consultar
+   `GET /api/v1/eventos/{id}/cola/estado` hasta que devuelva `ADMITTED`.
+   Guardar `passToken` y abrir el pago con
+   `POST /api/v1/eventos/{id}/pago/apertura` (204).
+3. Enviar `POST /api/orders` con `eventId`, `items` (zona y cantidad),
+   `paymentMethod=CARD`, `paymentResult=APPROVED` y una `idempotencyKey`
+   propia de la prueba. Para eventos con cola, pasar `passToken` en `queuePass`
+   antes de que expire. La primera creación debe dar 201. Repetir la misma
+   solicitud con la misma clave debe dar 200 con la orden original.
+4. Confirmar la orden en `GET /api/orders/me` y buscar `Compra confirmada` en
+   el buzón del comprador. Si la orden se creó y el correo no llegó, buscar
+   `No se pudo enviar el correo de confirmación de compra` y su `order_id` en
+   los logs de Laravel.
 
 Verificación normal: `docker compose exec app php artisan test` y
 `docker compose exec app php artisan route:list --path=api`. Todos los tests usan
@@ -197,8 +344,32 @@ aprobados. Cuatro carreras concurrentes en MySQL 8.0.46 aislado aprobadas (últi
 entrada, idempotencia, multizona y cancelación), sin sobreventa ni doble restauración.
 No se probó concurrencia PostgreSQL. No se tocaron las BD habituales ni Render.
 Pint aprobado en los 38 archivos PHP modificados; 34 rutas API registradas.
+El 2026-10-29: registro limitado a los campos confirmados por el usuario y empresa
+obligatoria para ORGANIZER. Suite completa ejecutada directamente con PHPUnit
+en Docker/PHP 8.4.27, sin red y con SQLite en memoria: 242 pruebas y 1318 aserciones
+aprobadas; Pint aprobado en los 7 archivos PHP corregidos. Se verifica el descarte
+de extras y la respuesta de login para perfiles históricos sin cambiar sus datos.
+Sin cambios en frontend, migraciones ni despliegue; no se repitió la integración
+Angular ni las pruebas concurrentes para esta corrección.
+El 2026-10-30, BUG-008: límite acumulado de 6 entradas confirmadas por usuario/evento
+en ambas rutas de compra, conservando el límite de cada intento y los reintentos
+idempotentes. Tickets históricos sin orden incluidos; cancelaciones liberan cupo.
+19 casos nuevos de regresión; suite completa con 262 pruebas y 1474 aserciones
+aprobadas en SQLite en memoria, Docker/PHP 8.4.27 sin red. Pint en los tres PHP
+cambiados aprobado. Cinco carreras en MySQL 8.0.46 temporal con procesos PHP
+distintos y peticiones al kernel HTTP de Laravel aprobadas, sin superar el cupo
+ni duplicar entradas por reintentos. No se probó PostgreSQL. Se retiraron los
+contenedores temporales; no se tocaron frontend, migraciones, despliegue ni BD habitual.
 Registros de entregas: EPIC1_IMPLEMENTATION.md y DEMO3_IMPLEMENTATION.md;
 consultarlos solo para revisar el alcance y los archivos de cada entrega.
+
+Recinto de prueba (2026-10-30): catálogo ampliado a 16 recintos y 51 zonas;
+JSON de eventos admite min:1 en zones. Suite completa de 265 pruebas y 1510
+aserciones aprobadas en Docker/PHP 8.4.27 y SQLite en memoria, sin red;
+Pint aprobado en los tres PHP modificados. Verificados seeding idempotente,
+publicación con General de capacidad 1, detalle público y agotamiento tras
+una sola venta. El seeder del catálogo está incluido en DatabaseSeeder y debe
+ejecutarse en cada base que actualice su código.
 
 Pendientes generales fuera del alcance: CORS explícito, rate limiting y el SQL
 documental antiguo. No instalar paquetes nuevos, tocar producción ni realizar
