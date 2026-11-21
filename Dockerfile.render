@@ -1,16 +1,6 @@
 # Dockerfile de producción para Render.
 # El Dockerfile de desarrollo (raíz) se mantiene para Docker Compose local.
 
-FROM composer:2 AS deps
-WORKDIR /app
-COPY composer.json composer.lock ./
-RUN composer install \
-    --no-dev \
-    --no-scripts \
-    --no-interaction \
-    --prefer-dist \
-    --no-autoloader
-
 FROM php:8.4-cli
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -30,7 +20,14 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-COPY --from=deps /app/vendor ./vendor
+COPY composer.json composer.lock ./
+RUN composer install \
+    --no-dev \
+    --no-scripts \
+    --no-interaction \
+    --prefer-dist \
+    --no-autoloader
+
 COPY . .
 
 RUN composer dump-autoload --optimize --no-dev
